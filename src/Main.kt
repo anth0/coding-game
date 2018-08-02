@@ -1,6 +1,7 @@
 import java.util.*
 
 const val MAX_MANA = 12
+val repartition = arrayOf(0, 2, 5, 6, 7, 5, 3, 2)
 
 /**
  * Auto-generated code below aims at helping you parse
@@ -21,25 +22,28 @@ fun main(args: Array<String>) {
             val firstCard = gameState.hand[0]
             val secondCard = gameState.hand[1]
             val thirdCard = gameState.hand[2]
-
-
-            var i = 1
-            for ((index, card) in gameState.hand.withIndex()) {
-                if (card.type == 0) {
-                    i = index
-                }
-                if (card.abilities.contains("C")) {
-                    i = index
-                    break
-                }
-            }
-            println("PICK $i")
+            val efficientIndexCard = searchEfficientCurve(firstCard, secondCard, thirdCard)
+//
+//            var i = 1
+//            for ((index, card) in gameState.hand.withIndex()) {
+//                if (card.type == 0) {
+//                    i = index
+//                }
+//                if (card.abilities.contains("C")) {
+//                    i = index
+//                    break
+//                }
+//            }
+            deck.add(gameState.hand[efficientIndexCard])
+            println("PICK $efficientIndexCard")
         } else { // FIGHT
             var result = ""
 
             var potentialSummons: List<Card> = gameState.hand
                     .filter { card -> card.cost <= gameState.me().mana }
-                    .sortedBy { card -> card.cost }
+                    .sortedByDescending { card -> card.cost }
+
+            System.err.println(potentialSummons)
 
             var mana = gameState.me().mana
             while (potentialSummons.isNotEmpty() && mana >= 0) {
@@ -51,7 +55,7 @@ fun main(args: Array<String>) {
                     }
                     mana -= potentialSummons[0].cost
                     potentialSummons = potentialSummons.drop(1)
-                    System.err.println(potentialSummons)
+
                 }
             }
 
@@ -162,8 +166,35 @@ data class Player(var health: Int, var mana: Int, var deckSize: Int, var runes: 
 }
 
 class Card(val id: Int, val instanceId: Int, val location: Int, val type: Int, val cost: Int, val attack: Int, val defense: Int, val abilities: String,
-           val myHealthChange: Int, val opponentHealthChange: Int, val cardDraw: Int)
+           val myHealthChange: Int, val opponentHealthChange: Int, val cardDraw: Int) {
+    override fun toString(): String = instanceId.toString()
+}
 
 enum class Ability(val code: String) {
     CHARGE("C"), BREAKTHROUGH("B"), GUARD("G"), DRAIN("D"), LETHAL("L"), WARD("W")
+}
+
+fun searchEfficientCurve(firstCard: Card, secondCard: Card, thirdCard: Card): Int {
+
+    val bestEffectiveCard = arrayOf(firstCard, secondCard, thirdCard)
+            .filter { card -> card.type == 0 }
+            .maxBy { card -> repartition[Math.min(card.cost, 7)] }
+
+    when(bestEffectiveCard) {
+        firstCard -> {
+            repartition[Math.min(firstCard.cost, 7)] = repartition[Math.min(firstCard.cost, 7)] - 1
+            return 0
+        }
+        secondCard -> {
+            repartition[Math.min(secondCard.cost, 7)] = repartition[Math.min(secondCard.cost, 7)] - 1
+            return 1
+        }
+        thirdCard -> {
+            repartition[Math.min(thirdCard.cost, 7)] = repartition[Math.min(thirdCard.cost, 7)] - 1
+            return 2
+        }
+    }
+
+    return 0
+
 }
