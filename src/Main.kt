@@ -1,7 +1,7 @@
 import java.util.*
 
 const val MAX_MANA = 12
-val repartition = arrayOf(0, 2, 5, 6, 7, 5, 3, 2)
+val repartition = mutableListOf(0, 2, 5, 6, 7, 5, 3, 2)
 
 /**
  * Auto-generated code below aims at helping you parse
@@ -180,6 +180,8 @@ fun searchEfficientCurve(firstCard: Card, secondCard: Card, thirdCard: Card): In
             .filter { card -> card.type == 0 }
             .maxBy { card -> repartition[Math.min(card.cost, 7)] }
 
+
+    System.err.println(repartition)
     when(bestEffectiveCard) {
         firstCard -> {
             repartition[Math.min(firstCard.cost, 7)] = repartition[Math.min(firstCard.cost, 7)] - 1
