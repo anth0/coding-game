@@ -1,3 +1,4 @@
+import CardType.*
 import java.util.*
 
 const val MAX_MANA = 12
@@ -28,24 +29,23 @@ fun main(args: Array<String>) {
         } else { // FIGHT
             var result = ""
 
-            var potentialSummons: List<Card> = gameState.hand
+            var potentialCardsToPlay: List<Card> = gameState.hand
                     .filter { card -> card.cost <= gameState.me().mana }
                     .sortedByDescending { card -> card.cost }
 
-            System.err.println(potentialSummons)
+            System.err.println(potentialCardsToPlay)
 
-            var mana = gameState.me().mana
-            while (potentialSummons.isNotEmpty() && mana >= 0) {
-                potentialSummons = potentialSummons.dropWhile { card -> card.cost > mana }
-                if (potentialSummons.isNotEmpty()) {
-                    result += "SUMMON " + potentialSummons[0].instanceId + ";"
-                    if (potentialSummons[0].abilities.contains("C")) {
-                        gameState.board.myCards.add(potentialSummons[0])
-                    }
-                    mana -= potentialSummons[0].cost
-                    potentialSummons = potentialSummons.drop(1)
-
+            var availableMana = gameState.me().mana
+            while (potentialCardsToPlay.isNotEmpty() && availableMana >= 0) {
+                val cardToPlay: Card? = potentialCardsToPlay.dropWhile { card -> card.cost > availableMana }.firstOrNull()
+                when (cardToPlay?.type) {
+                    CREATURE -> result += summonCreature(cardToPlay, gameState)
+                    GREEN_ITEM, RED_ITEM, BLUE_ITEM -> useItem(cardToPlay)
                 }
+                if (cardToPlay != null) {
+                    potentialCardsToPlay = potentialCardsToPlay.drop(1)
+                }
+
             }
 
             val opponentGuard = gameState.board.opponentCards
@@ -63,6 +63,18 @@ fun main(args: Array<String>) {
         }
 
     }
+}
+
+fun useItem(cardToPlay: Card) {
+//TODO
+}
+
+fun summonCreature(cardToPlay: Card, gameState: State): String {
+    if (cardToPlay.abilities.contains("C")) {
+        gameState.board.myCards.add(cardToPlay)
+    }
+    gameState.me().mana -= cardToPlay.cost
+    return "SUMMON " + cardToPlay.instanceId + ";" //FIXME convert this to Command
 }
 
 fun initGame(): Game {
@@ -89,7 +101,7 @@ fun updateGameState(gameState: State, input: Scanner): State {
         val cardNumber = input.nextInt()
         val instanceId = input.nextInt()
         val location = input.nextInt()
-        val cardType = CardType.values()[input.nextInt()]
+        val cardType = values()[input.nextInt()]
         val cost = input.nextInt()
         val attack = input.nextInt()
         val defense = input.nextInt()
@@ -98,10 +110,10 @@ fun updateGameState(gameState: State, input: Scanner): State {
         val opponentHealthChange = input.nextInt()
         val cardDraw = input.nextInt()
         val card = when (cardType) {
-            CardType.CREATURE -> Creature(cardNumber, instanceId, location, cost, attack, defense, abilities, myHealthChange, opponentHealthChange, cardDraw)
-            CardType.GREEN_ITEM -> GreenItem(cardNumber, instanceId, location, cost, attack, defense, abilities, myHealthChange, opponentHealthChange, cardDraw)
-            CardType.RED_ITEM -> RedItem(cardNumber, instanceId, location, cost, attack, defense, abilities, myHealthChange, opponentHealthChange, cardDraw)
-            CardType.BLUE_ITEM -> BlueItem(cardNumber, instanceId, location, cost, attack, defense, abilities, myHealthChange, opponentHealthChange, cardDraw)
+            CREATURE -> Creature(cardNumber, instanceId, location, cost, attack, defense, abilities, myHealthChange, opponentHealthChange, cardDraw)
+            GREEN_ITEM -> GreenItem(cardNumber, instanceId, location, cost, attack, defense, abilities, myHealthChange, opponentHealthChange, cardDraw)
+            RED_ITEM -> RedItem(cardNumber, instanceId, location, cost, attack, defense, abilities, myHealthChange, opponentHealthChange, cardDraw)
+            BLUE_ITEM -> BlueItem(cardNumber, instanceId, location, cost, attack, defense, abilities, myHealthChange, opponentHealthChange, cardDraw)
         }
 
         when (location) {
@@ -117,7 +129,7 @@ fun updateGameState(gameState: State, input: Scanner): State {
 fun searchEfficientCurve(firstCard: Card, secondCard: Card, thirdCard: Card): Int {
 
     val bestEffectiveCard = arrayOf(firstCard, secondCard, thirdCard)
-            .filter { card -> card.type == 0 }
+            .filter { card -> card.type == CREATURE }
             .maxBy { card -> repartition[Math.min(card.cost, 7)] }
 
     when (bestEffectiveCard) {
@@ -178,16 +190,16 @@ data class Player(var health: Int, var mana: Int, var deckSize: Int, var runes: 
     }
 }
 
-abstract class Card(val id: Int, val instanceId: Int, val location: Int, val type: Int, val cost: Int, val attack: Int, val defense: Int, val abilities: String,
+abstract class Card(val id: Int, val instanceId: Int, val location: Int, val type: CardType, val cost: Int, val attack: Int, val defense: Int, val abilities: String,
                     val myHealthChange: Int, val opponentHealthChange: Int, val cardDraw: Int) {
     override fun toString(): String = instanceId.toString()
 }
 
-abstract class Item(id: Int, instanceId: Int, location: Int, type: Int, cost: Int, attack: Int, defense: Int, abilities: String, myHealthChange: Int, opponentHealthChange: Int, cardDraw: Int) : Card(id, instanceId, location, type, cost, attack, defense, abilities, myHealthChange, opponentHealthChange, cardDraw)
-class Creature(id: Int, instanceId: Int, location: Int, cost: Int, attack: Int, defense: Int, abilities: String, myHealthChange: Int, opponentHealthChange: Int, cardDraw: Int) : Card(id, instanceId, location, CardType.CREATURE.ordinal, cost, attack, defense, abilities, myHealthChange, opponentHealthChange, cardDraw)
-class GreenItem(id: Int, instanceId: Int, location: Int, cost: Int, attack: Int, defense: Int, abilities: String, myHealthChange: Int, opponentHealthChange: Int, cardDraw: Int) : Item(id, instanceId, location, CardType.GREEN_ITEM.ordinal, cost, attack, defense, abilities, myHealthChange, opponentHealthChange, cardDraw)
-class RedItem(id: Int, instanceId: Int, location: Int, cost: Int, attack: Int, defense: Int, abilities: String, myHealthChange: Int, opponentHealthChange: Int, cardDraw: Int) : Item(id, instanceId, location, CardType.RED_ITEM.ordinal, cost, attack, defense, abilities, myHealthChange, opponentHealthChange, cardDraw)
-class BlueItem(id: Int, instanceId: Int, location: Int, cost: Int, attack: Int, defense: Int, abilities: String, myHealthChange: Int, opponentHealthChange: Int, cardDraw: Int) : Item(id, instanceId, location, CardType.BLUE_ITEM.ordinal, cost, attack, defense, abilities, myHealthChange, opponentHealthChange, cardDraw)
+abstract class Item(id: Int, instanceId: Int, location: Int, type: CardType, cost: Int, attack: Int, defense: Int, abilities: String, myHealthChange: Int, opponentHealthChange: Int, cardDraw: Int) : Card(id, instanceId, location, type, cost, attack, defense, abilities, myHealthChange, opponentHealthChange, cardDraw)
+class Creature(id: Int, instanceId: Int, location: Int, cost: Int, attack: Int, defense: Int, abilities: String, myHealthChange: Int, opponentHealthChange: Int, cardDraw: Int) : Card(id, instanceId, location, CREATURE, cost, attack, defense, abilities, myHealthChange, opponentHealthChange, cardDraw)
+class GreenItem(id: Int, instanceId: Int, location: Int, cost: Int, attack: Int, defense: Int, abilities: String, myHealthChange: Int, opponentHealthChange: Int, cardDraw: Int) : Item(id, instanceId, location, GREEN_ITEM, cost, attack, defense, abilities, myHealthChange, opponentHealthChange, cardDraw)
+class RedItem(id: Int, instanceId: Int, location: Int, cost: Int, attack: Int, defense: Int, abilities: String, myHealthChange: Int, opponentHealthChange: Int, cardDraw: Int) : Item(id, instanceId, location, RED_ITEM, cost, attack, defense, abilities, myHealthChange, opponentHealthChange, cardDraw)
+class BlueItem(id: Int, instanceId: Int, location: Int, cost: Int, attack: Int, defense: Int, abilities: String, myHealthChange: Int, opponentHealthChange: Int, cardDraw: Int) : Item(id, instanceId, location, BLUE_ITEM, cost, attack, defense, abilities, myHealthChange, opponentHealthChange, cardDraw)
 enum class Ability(val code: String) {
     CHARGE("C"), BREAKTHROUGH("B"), GUARD("G"), DRAIN("D"), LETHAL("L"), WARD("W")
 }
