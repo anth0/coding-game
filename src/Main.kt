@@ -207,3 +207,30 @@ enum class Ability(val code: String) {
 enum class CardType {
     CREATURE, GREEN_ITEM, RED_ITEM, BLUE_ITEM
 }
+class Commands(private var commands: MutableList<Command>) {
+    fun execute() {
+        var result = ""
+        result += commands.forEach { command -> command.execute() }
+        println(result)
+    }
+
+    fun add(command: Command) {
+        commands.add(command)
+    }
+    fun reinit() {
+        commands.clear()
+    }
+}
+abstract class Command {
+    abstract fun execute(): String
+}
+class Pick(val cardId: Int) : Command() {
+    override fun execute(): String {
+        return "PICK $cardId"
+    }
+}
+class Summon(val instanceId: Int) : Command() {
+    override fun execute(): String {
+        return "SUMMON $instanceId"
+    }
+}
