@@ -9,7 +9,7 @@ val repartition = mutableListOf(0, 2, 5, 6, 7, 5, 3, 2)
  **/
 fun main(args: Array<String>) {
     val input = Scanner(System.`in`)
-    var game = initGame()
+    val game = initGame()
 
     // game loop
     while (true) {
@@ -23,17 +23,6 @@ fun main(args: Array<String>) {
             val secondCard = gameState.hand[1]
             val thirdCard = gameState.hand[2]
             val efficientIndexCard = searchEfficientCurve(firstCard, secondCard, thirdCard)
-//
-//            var i = 1
-//            for ((index, card) in gameState.hand.withIndex()) {
-//                if (card.type == 0) {
-//                    i = index
-//                }
-//                if (card.abilities.contains("C")) {
-//                    i = index
-//                    break
-//                }
-//            }
             deck.add(gameState.hand[efficientIndexCard])
             println("PICK $efficientIndexCard")
         } else { // FIGHT
@@ -58,7 +47,6 @@ fun main(args: Array<String>) {
 
                 }
             }
-
 
             val opponentGuard = gameState.board.opponentCards
                     .filter { card -> card.abilities.contains("G") }
@@ -101,7 +89,7 @@ fun updateGameState(gameState: State, input: Scanner): State {
         val cardNumber = input.nextInt()
         val instanceId = input.nextInt()
         val location = input.nextInt()
-        val cardType = input.nextInt()
+        val cardType = CardType.values()[input.nextInt()]
         val cost = input.nextInt()
         val attack = input.nextInt()
         val defense = input.nextInt()
@@ -109,7 +97,12 @@ fun updateGameState(gameState: State, input: Scanner): State {
         val myHealthChange = input.nextInt()
         val opponentHealthChange = input.nextInt()
         val cardDraw = input.nextInt()
-        val card = Card(cardNumber, instanceId, location, cardType, cost, attack, defense, abilities, myHealthChange, opponentHealthChange, cardDraw)
+        val card = when (cardType) {
+            CardType.CREATURE -> Creature(cardNumber, instanceId, location, cost, attack, defense, abilities, myHealthChange, opponentHealthChange, cardDraw)
+            CardType.GREEN_ITEM -> GreenItem(cardNumber, instanceId, location, cost, attack, defense, abilities, myHealthChange, opponentHealthChange, cardDraw)
+            CardType.RED_ITEM -> RedItem(cardNumber, instanceId, location, cost, attack, defense, abilities, myHealthChange, opponentHealthChange, cardDraw)
+            CardType.BLUE_ITEM -> BlueItem(cardNumber, instanceId, location, cost, attack, defense, abilities, myHealthChange, opponentHealthChange, cardDraw)
+        }
 
         when (location) {
             0 -> gameState.hand.add(card)
@@ -119,6 +112,30 @@ fun updateGameState(gameState: State, input: Scanner): State {
     }
 
     return gameState
+}
+
+fun searchEfficientCurve(firstCard: Card, secondCard: Card, thirdCard: Card): Int {
+
+    val bestEffectiveCard = arrayOf(firstCard, secondCard, thirdCard)
+            .filter { card -> card.type == 0 }
+            .maxBy { card -> repartition[Math.min(card.cost, 7)] }
+
+    when (bestEffectiveCard) {
+        firstCard -> {
+            repartition[Math.min(firstCard.cost, 7)] = repartition[Math.min(firstCard.cost, 7)] - 1
+            return 0
+        }
+        secondCard -> {
+            repartition[Math.min(secondCard.cost, 7)] = repartition[Math.min(secondCard.cost, 7)] - 1
+            return 1
+        }
+        thirdCard -> {
+            repartition[Math.min(thirdCard.cost, 7)] = repartition[Math.min(thirdCard.cost, 7)] - 1
+            return 2
+        }
+    }
+
+    return 0
 }
 
 
@@ -132,10 +149,6 @@ class Game(private var round: Int, val state: State) {
 
     fun isInDraftPhase(): Boolean {
         return round <= 30
-    }
-
-    fun isInFightPhase(): Boolean {
-        return round > 30
     }
 }
 
@@ -165,38 +178,20 @@ data class Player(var health: Int, var mana: Int, var deckSize: Int, var runes: 
     }
 }
 
-class Card(val id: Int, val instanceId: Int, val location: Int, val type: Int, val cost: Int, val attack: Int, val defense: Int, val abilities: String,
-           val myHealthChange: Int, val opponentHealthChange: Int, val cardDraw: Int) {
+abstract class Card(val id: Int, val instanceId: Int, val location: Int, val type: Int, val cost: Int, val attack: Int, val defense: Int, val abilities: String,
+                    val myHealthChange: Int, val opponentHealthChange: Int, val cardDraw: Int) {
     override fun toString(): String = instanceId.toString()
 }
 
+abstract class Item(id: Int, instanceId: Int, location: Int, type: Int, cost: Int, attack: Int, defense: Int, abilities: String, myHealthChange: Int, opponentHealthChange: Int, cardDraw: Int) : Card(id, instanceId, location, type, cost, attack, defense, abilities, myHealthChange, opponentHealthChange, cardDraw)
+class Creature(id: Int, instanceId: Int, location: Int, cost: Int, attack: Int, defense: Int, abilities: String, myHealthChange: Int, opponentHealthChange: Int, cardDraw: Int) : Card(id, instanceId, location, CardType.CREATURE.ordinal, cost, attack, defense, abilities, myHealthChange, opponentHealthChange, cardDraw)
+class GreenItem(id: Int, instanceId: Int, location: Int, cost: Int, attack: Int, defense: Int, abilities: String, myHealthChange: Int, opponentHealthChange: Int, cardDraw: Int) : Item(id, instanceId, location, CardType.GREEN_ITEM.ordinal, cost, attack, defense, abilities, myHealthChange, opponentHealthChange, cardDraw)
+class RedItem(id: Int, instanceId: Int, location: Int, cost: Int, attack: Int, defense: Int, abilities: String, myHealthChange: Int, opponentHealthChange: Int, cardDraw: Int) : Item(id, instanceId, location, CardType.RED_ITEM.ordinal, cost, attack, defense, abilities, myHealthChange, opponentHealthChange, cardDraw)
+class BlueItem(id: Int, instanceId: Int, location: Int, cost: Int, attack: Int, defense: Int, abilities: String, myHealthChange: Int, opponentHealthChange: Int, cardDraw: Int) : Item(id, instanceId, location, CardType.BLUE_ITEM.ordinal, cost, attack, defense, abilities, myHealthChange, opponentHealthChange, cardDraw)
 enum class Ability(val code: String) {
     CHARGE("C"), BREAKTHROUGH("B"), GUARD("G"), DRAIN("D"), LETHAL("L"), WARD("W")
 }
 
-fun searchEfficientCurve(firstCard: Card, secondCard: Card, thirdCard: Card): Int {
-
-    val bestEffectiveCard = arrayOf(firstCard, secondCard, thirdCard)
-            .filter { card -> card.type == 0 }
-            .maxBy { card -> repartition[Math.min(card.cost, 7)] }
-
-
-    System.err.println(repartition)
-    when(bestEffectiveCard) {
-        firstCard -> {
-            repartition[Math.min(firstCard.cost, 7)] = repartition[Math.min(firstCard.cost, 7)] - 1
-            return 0
-        }
-        secondCard -> {
-            repartition[Math.min(secondCard.cost, 7)] = repartition[Math.min(secondCard.cost, 7)] - 1
-            return 1
-        }
-        thirdCard -> {
-            repartition[Math.min(thirdCard.cost, 7)] = repartition[Math.min(thirdCard.cost, 7)] - 1
-            return 2
-        }
-    }
-
-    return 0
-
+enum class CardType {
+    CREATURE, GREEN_ITEM, RED_ITEM, BLUE_ITEM
 }
