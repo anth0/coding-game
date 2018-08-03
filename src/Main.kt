@@ -27,9 +27,8 @@ fun main(args: Array<String>) {
             val thirdCard = gameState.hand[2]
             val efficientIndexCard = searchEfficientCurve(firstCard, secondCard, thirdCard)
             deck.add(gameState.hand[efficientIndexCard])
-            println("PICK $efficientIndexCard")
+            commands.add(Pick(efficientIndexCard))
         } else { // FIGHT
-            var result = ""
 
             if (!findLethal(gameState, commands)) {
 
@@ -39,38 +38,30 @@ fun main(args: Array<String>) {
 
                 System.err.println(potentialCardsToPlay)
 
-                var availableMana = gameState.me().mana
-                while (potentialCardsToPlay.isNotEmpty() && availableMana >= 0) {
-                    potentialCardsToPlay = potentialCardsToPlay.dropWhile { card -> card.cost > availableMana }
+                //var availableMana = gameState.me().mana
+                while (potentialCardsToPlay.isNotEmpty() && gameState.me().mana >= 0) {
+                    potentialCardsToPlay = potentialCardsToPlay.dropWhile { card -> card.cost > gameState.me().mana }
                     val cardToPlay: Card? = potentialCardsToPlay.firstOrNull()
                     if (cardToPlay != null) {
                         when (cardToPlay.type) {
-                            CREATURE -> result += summonCreature(cardToPlay, gameState)
-                            GREEN_ITEM, RED_ITEM, BLUE_ITEM -> useItem(cardToPlay)
+                            CREATURE -> commands.add(summonCreature(cardToPlay, gameState))
+                            GREEN_ITEM, RED_ITEM, BLUE_ITEM -> commands.add(useItem(cardToPlay, gameState))
                         }
-                        availableMana -= cardToPlay.cost
                         potentialCardsToPlay = potentialCardsToPlay.drop(1)
                     }
                 }
 
                 // TODO save card already play
 
-                val opponentGuard = gameState.board.opponentCards
-                        .filter { card -> card.abilities.contains(Ability.GUARD.code) }
-                        .take(1)
+                val opponentGuard = gameState.board.opponentCards.firstOrNull { card -> card.abilities.contains("G") }
 
-                gameState.board.myCards
-                        .forEach { card: Card -> result += "ATTACK " + card.instanceId + if (opponentGuard.isEmpty()) " -1;" else (" " + opponentGuard[0].instanceId + ";") }
-
-                if (result == "") {
-                    println("PASS")
-                } else {
-                    println(result)
+                gameState.board.myCards.forEach { card: Card ->
+                    commands.add(Attack(card.instanceId, opponentGuard?.instanceId ?: -1))
                 }
-            } else {
-                commands.execute()
             }
         }
+
+        commands.execute()
     }
 }
 
@@ -84,11 +75,11 @@ fun findLethal(gameState: State, commands: Commands): Boolean {
     val damageOnBoard = gameState.board.myCards.sumBy { card: Card -> card.attack }
 
     if (guardOnBoard == 0) {
-        if (life - damageOnBoard <= 0) {
+        if (life <= damageOnBoard) {
             gameState.board.myCards.forEach { card: Card -> commands.add(Attack(card.instanceId, -1)) }
             return true
         } else {
-            val dmgMissing = life - damageOnBoard
+            val healthLeft = life - damageOnBoard
 
             val buffCards = gameState.hand.filter { card: Card -> card.type == GREEN_ITEM && card.attack > 0 }
             var dmgWithBuff = 0
@@ -101,18 +92,19 @@ fun findLethal(gameState: State, commands: Commands): Boolean {
 
             val spellCards = gameState.hand.filter { card: Card -> card.type == BLUE_ITEM }
             // negative value
-            val dmgWithSpell = - spellCards.sumBy { card: Card -> card.defense + card.opponentHealthChange }
+            val dmgWithSpell = -spellCards.sumBy { card: Card -> card.defense + card.opponentHealthChange }
 
             val dmgMax = dmgWithBuff + dmgWithCharge + dmgWithSpell
 
-            if (dmgMax >= dmgMissing) {
+            if (dmgMax >= healthLeft) {
                 // calculate mana possibilities
-                val cardToPlay: Card? = searchPossibilities(gameState.me().mana, dmgMissing, buffCards + chargeCards + spellCards)
+                val cardToPlay: Card? = searchPossibilities(gameState.me().mana, healthLeft, buffCards + chargeCards + spellCards)
                 if (cardToPlay != null) {
                     when (cardToPlay.type) {
-                        CREATURE -> commands.add(Summon(cardToPlay.instanceId))
-                        GREEN_ITEM -> commands.add(Use(cardToPlay.instanceId, gameState.board.myCards.firstOrNull()!!.instanceId))
-                        BLUE_ITEM -> commands.add(Use(cardToPlay.instanceId, -1))
+                        CREATURE -> commands.add(summonCreature(cardToPlay, gameState))
+                        GREEN_ITEM -> commands.add(useItem(cardToPlay, gameState, gameState.board.myCards.first().instanceId))
+                        BLUE_ITEM -> commands.add(useItem(cardToPlay, gameState))
+                        RED_ITEM -> commands.add(useItem(cardToPlay, gameState))
                     }
                     gameState.board.myCards.forEach { card: Card -> commands.add(Attack(card.instanceId, -1)) }
                 }
@@ -130,29 +122,33 @@ fun findLethal(gameState: State, commands: Commands): Boolean {
     return false
 }
 
-fun searchPossibilities(mana: Int, dmgMissing: Int, cards: List<Card>): Card? {
+fun searchPossibilities(mana: Int, healthLeft: Int, cards: List<Card>): Card? {
     // TODO calculate for multiple card combo
 
     // one card combo
     val possibilities = cards.filter { card: Card ->
-        when(card.type) {
-            GREEN_ITEM, CREATURE -> card.attack >= dmgMissing && card.cost <= mana
-            BLUE_ITEM -> (card.defense + card.opponentHealthChange) >= dmgMissing && card.cost <= mana
+        when (card.type) {
+            GREEN_ITEM, CREATURE -> card.attack >= healthLeft && card.cost <= mana
+            BLUE_ITEM -> (card.defense + card.opponentHealthChange) >= healthLeft && card.cost <= mana
             RED_ITEM -> false
         }
     }
     return possibilities.firstOrNull()
 }
 
-fun useItem(cardToPlay: Card) {
-//TODO
+fun useItem(cardToPlay: Card, gameState: State, targetId: Int = -1): Command {
+    gameState.me().mana -= cardToPlay.cost
+    gameState.hand.remove(cardToPlay)
+    return Use(cardToPlay.instanceId, targetId)
 }
 
-fun summonCreature(cardToPlay: Card, gameState: State): String {
+fun summonCreature(cardToPlay: Card, gameState: State): Command {
     if (cardToPlay.abilities.contains("C")) {
         gameState.board.myCards.add(cardToPlay)
     }
-    return "SUMMON " + cardToPlay.instanceId + ";" //FIXME convert this to Command
+    gameState.me().mana -= cardToPlay.cost
+    gameState.hand.remove(cardToPlay)
+    return Summon(cardToPlay.instanceId)
 }
 
 fun initGame(): Game {
@@ -269,7 +265,7 @@ data class Player(var health: Int, var mana: Int, var deckSize: Int, var runes: 
 }
 
 abstract class Card(val id: Int, val instanceId: Int, val location: Int, val type: CardType, val cost: Int, val attack: Int, val defense: Int, val abilities: String,
-                    val myHealthChange: Int, val opponentHealthChange: Int, val cardDraw: Int) {
+                    val myHealthChange: Int, val opponentHealthChange: Int, val cardDraw: Int, var played: Boolean = false) {
     override fun toString(): String = instanceId.toString()
 }
 
@@ -286,44 +282,56 @@ enum class CardType {
     CREATURE, GREEN_ITEM, RED_ITEM, BLUE_ITEM
 }
 
+
 //Green items should target the active player's creatures. They have a positive effect on them.
 //Red items should target the opponent's creatures. They have a negative effect on them.
 //Blue items can be played with the "no creature" target identifier (-1) to give the active player a positive effect or cause damage to the opponent, depending on the card. Blue items with negative defense points can also target enemy creatures.
 
 class Commands(private var commands: MutableList<Command>) {
     fun execute() {
-        println(commands.joinToString(";") { command: Command -> command.execute() })
+        if (commands.isEmpty()) {
+            add(Pass())
+        }
+        println(commands.joinToString(";"))
     }
 
     fun add(command: Command) {
         commands.add(command)
     }
+
     fun reinit() {
         commands.clear()
     }
 }
-abstract class Command {
-    abstract fun execute(): String
-}
-class Pick(val cardId: Int) : Command() {
-    override fun execute(): String {
+
+abstract class Command
+
+class Pick(private val cardId: Int) : Command() {
+    override fun toString(): String {
         return "PICK $cardId"
     }
 }
-class Summon(val instanceId: Int) : Command() {
-    override fun execute(): String {
+
+class Summon(private val instanceId: Int) : Command() {
+    override fun toString(): String {
         return "SUMMON $instanceId"
     }
 }
 
-class Attack(val instanceId: Int, val target: Int) : Command() {
-    override fun execute(): String {
-        return "ATTACK $instanceId $target"
+class Pass : Command() {
+    override fun toString(): String {
+        return "PASS"
     }
 }
 
-class Use(val instanceId: Int, val target: Int) : Command() {
-    override fun execute(): String {
-        return "USE $instanceId $target"
+class Attack(private val attackerId: Int, private var opponentId: Int = -1) : Command() {
+    override fun toString(): String {
+        return "ATTACK $attackerId $opponentId"
+    }
+}
+
+class Use(private val itemId: Int, private val targetId: Int = -1) : Command() {
+    override fun toString(): String {
+        return "USE $itemId $targetId"
     }
 }
