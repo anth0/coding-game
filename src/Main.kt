@@ -1,9 +1,15 @@
+
 import Ability.*
 import CardType.*
 import java.util.*
 
 const val MAX_MANA = 12
+
+//control deck
 val repartition = mutableListOf(0, 2, 5, 6, 7, 5, 3, 2)
+
+//aggro deck
+//val repartition = mutableListOf(2, 7, 6, 7, 4, 2, 1, 1)
 
 /**
  * Auto-generated code below aims at helping you parse
@@ -33,48 +39,215 @@ fun main(args: Array<String>) {
 
             if (!findLethal(gameState, commands)) {
 
-                var potentialCardsToPlay: List<Card> = gameState.hand
-                        .filter { card -> card.cost <= gameState.me().mana }
-                        .sortedByDescending { card -> card.cost }
+                gameState.board.opponentCards
+                        .filter { card -> card.abilities.contains(GUARD) }
+                        .forEach { card -> searchBestTrade(card, gameState, commands) }
 
-                System.err.println(potentialCardsToPlay)
+                val opponentGuard = gameState.board.opponentCards.firstOrNull { card -> card.abilities.contains(GUARD) }
 
-                //var availableMana = gameState.me().mana
-                while (potentialCardsToPlay.isNotEmpty() && gameState.me().mana >= 0) {
-                    potentialCardsToPlay = potentialCardsToPlay.dropWhile { card -> card.cost > gameState.me().mana }
-                    val cardToPlay: Card? = potentialCardsToPlay.sortedByDescending { card -> card.abilities.size }.firstOrNull()
+                if (opponentGuard == null) {
+                    //dangerous card
+                    gameState.board.opponentCards
+                            .filter { card -> card.abilities.contains(DRAIN) }
+                            .forEach { card -> searchBestTrade(card, gameState, commands) }
+
+                    gameState.board.opponentCards
+                            .sortedByDescending { card -> card.cost }
+                            .forEach { card -> searchBestTrade(card, gameState, commands) }
+                }
+
+                while (gameState.hand
+                                .filter { card -> card.cost <= gameState.me().mana && card.type == CREATURE }
+                                .sortedByDescending { card -> card.cost }
+                                .isNotEmpty() && gameState.me().mana >= 0) {
+                    val cardToPlay: Card? = gameState.hand
+                            .filter { card -> card.cost <= gameState.me().mana && card.type == CREATURE }
+                            .sortedByDescending { card -> card.cost }
+                            .firstOrNull()
                     if (cardToPlay != null) {
-                        when (cardToPlay.type) {
-                            CREATURE -> commands.add(summonCreature(cardToPlay, gameState))
-                            GREEN_ITEM ->  {
-                                val command = useGreenItem(cardToPlay, gameState)
-                                if (command != null) {
-                                    commands.add(command)
-                                }
-                            }
-                            RED_ITEM -> {
-                                val command = useRedItem(cardToPlay, gameState)
-                                if (command != null) {
-                                    commands.add(command)
-                                }
-                            }
-                            BLUE_ITEM -> commands.add(useItem(cardToPlay, gameState))
-                        }
-                        potentialCardsToPlay = potentialCardsToPlay.drop(1)
+                        commands.add(summonCreature(cardToPlay as Creature, gameState))
+
+                        //TODO useless in this phase (ITEM card are situational card, usefull during searchBestTrade)
+//                            GREEN_ITEM ->  {
+//                                val command = useGreenItem(cardToPlay, gameState)
+//                                if (command != null) {
+//                                    commands.add(command)
+//                                }
+//                            }
+//                            RED_ITEM -> {
+//                                val command = useRedItem(cardToPlay, gameState)
+//                                if (command != null) {
+//                                    commands.add(command)
+//                                }
+//                            }
+//                            BLUE_ITEM -> commands.add(useItem(cardToPlay, gameState))
+//                        }
                     }
                 }
 
-                // TODO save card already play
-
-                val opponentGuard = gameState.board.opponentCards.firstOrNull { card -> card.abilities.contains(GUARD) }
-//TODO attack more intelligently by making better trades
-                gameState.board.myCards.forEach { card: Card ->
-                    commands.add(Attack(card.instanceId, opponentGuard?.instanceId ?: -1))
-                }
+                //TODO attack more intelligently by making better trades
+                gameState.board.myCards
+                        .filter { card -> !card.played }
+                        .sortedBy { card -> card.cost }
+                        .forEach { card -> commands.add(attackWithCreatureInBoard(card, opponentGuard?.instanceId ?: -1)) }
             }
         }
 
         commands.execute()
+    }
+}
+
+fun searchBestTrade(enemyToTrade: Card, gameState: State, commands: Commands) {
+
+    // if crea not ward
+    if (!enemyToTrade.abilities.contains(WARD)) {
+
+        var bestTrade: Card?
+
+        // sort.cost <= enemyToTrade.cost
+        bestTrade = gameState.hand
+                .filter { card ->
+                    card.cost <= gameState.me().mana &&
+                            (card.type == BLUE_ITEM || card.type == RED_ITEM) &&
+                            -card.defense >= enemyToTrade.defense &&
+                            card.cost <= enemyToTrade.cost
+                }
+                .sortedBy { card -> card.cost }
+                .firstOrNull()
+
+        if (bestTrade != null) {
+            commands.add(useItem(bestTrade, gameState, enemyToTrade.instanceId))
+            gameState.board.opponentCards.remove(enemyToTrade)
+            return
+        }
+
+        // crea.cost <= enemyToTrade.cost without die
+        bestTrade = gameState.board.myCards
+                .filter { card ->
+                    !card.played &&
+                            card.cost <= enemyToTrade.cost &&
+                            card.attack >= enemyToTrade.defense &&
+                            (card.defense > enemyToTrade.attack || card.abilities.contains(WARD))
+                }
+                .sortedBy { card -> card.cost }
+                .firstOrNull()
+
+        if (bestTrade != null) {
+            commands.add(attackWithCreatureInBoard(bestTrade, enemyToTrade.instanceId))
+            gameState.board.opponentCards.remove(enemyToTrade)
+            return
+        }
+
+        // crea with ward
+        bestTrade = gameState.board.myCards
+                .filter { card ->
+                    !card.played &&
+                            card.abilities.contains(WARD) &&
+                            card.attack >= enemyToTrade.defense
+                }
+                .sortedBy { card -> card.cost }
+                .firstOrNull()
+
+        if (bestTrade != null) {
+            commands.add(attackWithCreatureInBoard(bestTrade, enemyToTrade.instanceId))
+            gameState.board.opponentCards.remove(enemyToTrade)
+            return
+        }
+
+        // crea in hand with charge without die
+        bestTrade = gameState.hand
+                .filter { card ->
+                    card.cost <= gameState.me().mana &&
+                            card.type == CREATURE &&
+                            card.abilities.contains(CHARGE) &&
+                            card.attack >= enemyToTrade.defense &&
+                            (card.defense > enemyToTrade.attack || card.abilities.contains(WARD))
+                }
+                .sortedBy { card -> card.cost }
+                .firstOrNull()
+
+        if (bestTrade != null) {
+            commands.add(summonCreature(bestTrade as Creature, gameState))
+            commands.add(attackWithCreatureInBoard(bestTrade, enemyToTrade.instanceId))
+            gameState.board.opponentCards.remove(enemyToTrade)
+            return
+        }
+
+        // crea.cost + buff without die
+        if (gameState.board.myCards.isNotEmpty()) {
+            var buff: Card? = null
+            for (creature in gameState.board.myCards.filter { creature -> !creature.played }) {
+                buff = gameState.hand
+                        .filter { card ->
+                            card.cost <= gameState.me().mana &&
+                                    card.type == GREEN_ITEM &&
+                                    card.attack + creature.attack >= enemyToTrade.defense &&
+                                    (card.defense + creature.defense > enemyToTrade.attack || card.abilities.contains(WARD) || creature.abilities.contains(WARD))
+                        }
+                        .sortedBy { card -> card.cost }
+                        .firstOrNull()
+                if (buff != null) {
+                    bestTrade = creature
+                    break
+                }
+            }
+
+            if (bestTrade != null && buff != null) {
+                commands.add(useItem(buff, gameState, bestTrade.instanceId))
+                commands.add(attackWithCreatureInBoard(bestTrade as Creature, enemyToTrade.instanceId))
+                gameState.board.opponentCards.remove(enemyToTrade)
+                return
+            }
+        }
+
+        // sort.cost > enemyToTrade.cost
+        bestTrade = gameState.hand
+                .filter { card ->
+                    card.cost <= gameState.me().mana &&
+                            (card.type == BLUE_ITEM || card.type == RED_ITEM) &&
+                            -card.defense >= enemyToTrade.defense &&
+                            card.cost > enemyToTrade.cost
+                }
+                .sortedBy { card -> card.cost }
+                .firstOrNull()
+
+        if (bestTrade != null) {
+            commands.add(useItem(bestTrade, gameState, enemyToTrade.instanceId))
+            gameState.board.opponentCards.remove(enemyToTrade)
+            return
+        }
+
+        // crea.cost > enemyToTrade.cost without die
+        bestTrade = gameState.board.myCards
+                .filter { card ->
+                    !card.played &&
+                            card.cost > enemyToTrade.cost &&
+                            card.attack >= enemyToTrade.defense
+                }
+                .sortedBy { card -> card.cost }
+                .firstOrNull()
+
+        if (bestTrade != null) {
+            commands.add(attackWithCreatureInBoard(bestTrade, enemyToTrade.instanceId))
+            gameState.board.opponentCards.remove(enemyToTrade)
+            return
+        }
+
+        // crea.cost <= enemyToTrade.cost with die
+        bestTrade = gameState.board.myCards
+                .filter { card ->
+                    !card.played &&
+                            card.cost <= enemyToTrade.cost &&
+                            card.attack >= enemyToTrade.defense
+                }
+                .sortedBy { card -> card.cost }
+                .firstOrNull()
+
+        if (bestTrade != null) {
+            commands.add(attackWithCreatureInBoard(bestTrade, enemyToTrade.instanceId))
+            gameState.board.opponentCards.remove(enemyToTrade)
+            return
+        }
     }
 }
 
@@ -172,7 +345,7 @@ fun findLethal(gameState: State, commands: Commands): Boolean {
                 val cardToPlay: Card? = searchPossibilities(gameState.me().mana, healthLeft, buffCards + chargeCards + spellCards)
                 if (cardToPlay != null) {
                     when (cardToPlay.type) {
-                        CREATURE -> commands.add(summonCreature(cardToPlay, gameState))
+                        CREATURE -> commands.add(summonCreature(cardToPlay as Creature, gameState))
                         GREEN_ITEM -> commands.add(useItem(cardToPlay, gameState, gameState.board.myCards.first().instanceId))
                         BLUE_ITEM -> commands.add(useItem(cardToPlay, gameState))
                         RED_ITEM -> commands.add(useItem(cardToPlay, gameState))
@@ -206,7 +379,12 @@ fun useItem(cardToPlay: Card, gameState: State, targetId: Int = -1): Command {
     return Use(cardToPlay.instanceId, targetId)
 }
 
-fun summonCreature(cardToPlay: Card, gameState: State): Command {
+fun attackWithCreatureInBoard(cardToPlay: Creature, targetId: Int = -1): Command {
+    cardToPlay.played = true
+    return Attack(cardToPlay.instanceId, targetId)
+}
+
+fun summonCreature(cardToPlay: Creature, gameState: State): Command {
     if (cardToPlay.abilities.contains(CHARGE)) {
         gameState.board.myCards.add(cardToPlay)
     }
@@ -256,8 +434,8 @@ fun updateGameState(gameState: State, input: Scanner): State {
 
         when (location) {
             0 -> gameState.hand.add(card)
-            1 -> gameState.board.myCards.add(card)
-            -1 -> gameState.board.opponentCards.add(card)
+            1 -> gameState.board.myCards.add(card as Creature)
+            -1 -> gameState.board.opponentCards.add(card as Creature)
         }
     }
 
@@ -267,8 +445,8 @@ fun updateGameState(gameState: State, input: Scanner): State {
 fun searchEfficientCurve(firstCard: Card, secondCard: Card, thirdCard: Card): Int {
 
     val bestEffectiveCard = arrayOf(firstCard, secondCard, thirdCard)
-            .filter { card -> card.type == CREATURE }
-            .maxBy { card -> repartition[Math.min(card.cost, 7)] }
+//            .filter { card -> card.type == CREATURE }
+            .maxBy { card -> repartition[Math.min(card.cost, 7)] + getCardRating(card) }
 
     when (bestEffectiveCard) {
         firstCard -> {
@@ -286,6 +464,37 @@ fun searchEfficientCurve(firstCard: Card, secondCard: Card, thirdCard: Card): In
     }
 
     return 0
+}
+
+fun getCardRating(card: Card): Double {
+    val rating: Double = when (card.type) {
+        CREATURE, GREEN_ITEM -> card.attack + card.defense  + (card.myHealthChange / 2) - (card.opponentHealthChange / 2) + (card.cardDraw * 2) + getAbilitiesRating(card)
+        RED_ITEM, BLUE_ITEM -> (- card.attack - card.defense + (card.myHealthChange / 2) - (card.opponentHealthChange / 2) + (card.cardDraw * 2)).toDouble() // remove abilities is very situational
+    }
+    return rating - (card.cost * 2 + 1)
+}
+
+fun getAbilitiesRating(card: Card): Double {
+    var rating = 0.0
+    if (card.abilities.contains(BREAKTHROUGH)) {
+        rating += 1
+    }
+    if (card.abilities.contains(CHARGE)) {
+        rating += 2
+    }
+    if (card.abilities.contains(DRAIN)) {
+        rating += 0.5 * card.attack
+    }
+    if (card.abilities.contains(GUARD)) {
+        rating += 1
+    }
+    if (card.abilities.contains(LETHAL)) {
+        rating += 1
+    }
+    if (card.abilities.contains(WARD)) {
+        rating += card.attack
+    }
+    return rating
 }
 
 
@@ -312,7 +521,7 @@ class State(val board: Board, private var players: List<Player>, val hand: Mutab
     }
 }
 
-class Board(val myCards: MutableList<Card>, val opponentCards: MutableList<Card>) {
+class Board(val myCards: MutableList<Creature>, val opponentCards: MutableList<Creature>) {
     fun clear() {
         myCards.clear()
         opponentCards.clear()
