@@ -6,10 +6,10 @@ import java.util.*
 const val MAX_MANA = 12
 
 //control deck
-val repartition = mutableListOf(0, 2, 5, 6, 7, 5, 3, 2)
+//val repartition = mutableListOf(0, 2, 5, 6, 7, 5, 3, 2)
 
 //aggro deck
-//val repartition = mutableListOf(2, 7, 6, 7, 4, 2, 1, 1)
+val repartition = mutableListOf(2, 7, 6, 7, 4, 2, 1, 1)
 
 /**
  * Auto-generated code below aims at helping you parse
@@ -87,7 +87,7 @@ fun main(args: Array<String>) {
 
                 //TODO attack more intelligently by making better trades
                 gameState.board.myCards
-                        .filter { card -> !card.played }
+                        .filter { card -> !card.played && card.attack > 0 }
                         .sortedBy { card -> card.cost }
                         .forEach { card -> commands.add(attackWithCreatureInBoard(card, opponentGuard?.instanceId ?: -1)) }
             }
@@ -99,10 +99,12 @@ fun main(args: Array<String>) {
 
 fun searchBestTrade(enemyToTrade: Card, gameState: State, commands: Commands) {
 
+    var bestTrade: Card?
+
     // if crea not ward
     if (!enemyToTrade.abilities.contains(WARD)) {
 
-        var bestTrade: Card?
+
 
         // sort.cost <= enemyToTrade.cost
         bestTrade = gameState.hand
@@ -245,6 +247,50 @@ fun searchBestTrade(enemyToTrade: Card, gameState: State, commands: Commands) {
 
         if (bestTrade != null) {
             commands.add(attackWithCreatureInBoard(bestTrade, enemyToTrade.instanceId))
+            gameState.board.opponentCards.remove(enemyToTrade)
+            return
+        }
+
+    } else {
+
+        // sort able to kill crea ward
+        bestTrade = gameState.hand
+                .filter { card ->
+                    card.cost <= gameState.me().mana &&
+                            card.type == RED_ITEM &&
+                            card.abilities.contains(WARD) &&
+                            -card.defense >= enemyToTrade.defense
+                }
+                .sortedBy { card -> card.cost }
+                .firstOrNull()
+
+        if (bestTrade != null) {
+            commands.add(useItem(bestTrade, gameState, enemyToTrade.instanceId))
+            gameState.board.opponentCards.remove(enemyToTrade)
+            return
+        }
+
+        // search only 2 combo card ...
+        // crea with smallest cost and attack without die
+        var antiWard: Card? = null
+        for (creature in gameState.board.myCards.filter { card -> !card.played && card.attack >= 1 && (card.defense > enemyToTrade.attack || card.abilities.contains(WARD)) }.sortedBy { card -> card.attack }) {
+            bestTrade = gameState.board.myCards
+                    .filter { card ->
+                        !card.played &&
+                                card.instanceId != creature.instanceId &&
+                                card.attack >= enemyToTrade.defense &&
+                                (card.defense > enemyToTrade.attack || card.abilities.contains(WARD))
+                    }
+                    .sortedBy { card -> card.cost }
+                    .firstOrNull()
+            if (bestTrade != null) {
+                antiWard = creature
+                break
+            }
+        }
+        if (bestTrade != null && antiWard != null) {
+            commands.add(attackWithCreatureInBoard(antiWard as Creature, enemyToTrade.instanceId))
+            commands.add(attackWithCreatureInBoard(bestTrade as Creature, enemyToTrade.instanceId))
             gameState.board.opponentCards.remove(enemyToTrade)
             return
         }
@@ -446,7 +492,7 @@ fun searchEfficientCurve(firstCard: Card, secondCard: Card, thirdCard: Card): In
 
     val bestEffectiveCard = arrayOf(firstCard, secondCard, thirdCard)
 //            .filter { card -> card.type == CREATURE }
-            .maxBy { card -> repartition[Math.min(card.cost, 7)] + getCardRating(card) }
+            .maxBy { card -> repartition[Math.min(card.cost, 7)] + getCardRating(card)}
 
     when (bestEffectiveCard) {
         firstCard -> {
