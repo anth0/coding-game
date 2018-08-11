@@ -24,75 +24,80 @@ fun main(args: Array<String>) {
     while (true) {
         game.nextRound()
         actionPlan.reinit()
-        val gameState = updateGameState(game.state, input)
-        val deck = gameState.deck
 
-        if (game.isInDraftPhase()) { // DRAFT
+        Benchmark.logTime {
+            val gameState = updateGameState(game.state, input)
+            val deck = gameState.deck
 
-            val firstCard = gameState.hand[0]
-            val secondCard = gameState.hand[1]
-            val thirdCard = gameState.hand[2]
-            val efficientIndexCard = searchEfficientCurve(firstCard, secondCard, thirdCard)
-            deck.add(gameState.hand[efficientIndexCard])
-            actionPlan.add(Pick(efficientIndexCard))
-        } else { // FIGHT
+            if (game.isInDraftPhase()) { // DRAFT
 
-            if (!findLethal(gameState, actionPlan)) {
+                val firstCard = gameState.hand[0]
+                val secondCard = gameState.hand[1]
+                val thirdCard = gameState.hand[2]
+                val efficientIndexCard = searchEfficientCurve(firstCard, secondCard, thirdCard)
+                deck.add(gameState.hand[efficientIndexCard])
+                actionPlan.add(Pick(efficientIndexCard))
+            } else { // FIGHT
 
-                gameState.board.opponentCards
-                        .filter { card -> card.abilities.contains(GUARD) }
-                        .forEach { card ->
-                            run {
-                                System.err.println("searching best trade for guard")
-                                searchBestTrade(card, gameState, actionPlan)
-                            }
-                        }
+                if (!findLethal(gameState, actionPlan)) {
 
-                val opponentGuard = gameState.board.opponentCards.firstOrNull { card -> card.abilities.contains(GUARD) }
-
-                if (opponentGuard == null) {
-                    //dangerous card
                     gameState.board.opponentCards
-                            .filter { card -> card.abilities.contains(DRAIN) }
+                            .filter { card -> card.abilities.contains(GUARD) }
                             .forEach { card ->
                                 run {
-                                    System.err.println("searching best trade for drain")
+                                    System.err.println("searching best trade for guard")
                                     searchBestTrade(card, gameState, actionPlan)
                                 }
                             }
 
-                    gameState.board.opponentCards
-                            .sortedByDescending { card -> card.cost }
-                            .forEach { card ->
-                                run {
-                                    System.err.println("searching best trade for cards")
-                                    searchBestTrade(card, gameState, actionPlan)
-                                }
-                            }
-                }
+                    val opponentGuard = gameState.board.opponentCards.firstOrNull { card -> card.abilities.contains(GUARD) }
 
-                while (gameState.hand
+                    if (opponentGuard == null) {
+                        //dangerous card
+                        gameState.board.opponentCards
+                                .filter { card -> card.abilities.contains(DRAIN) }
+                                .forEach { card ->
+                                    run {
+                                        System.err.println("searching best trade for drain")
+                                        searchBestTrade(card, gameState, actionPlan)
+                                    }
+                                }
+
+                        gameState.board.opponentCards
+                                .sortedByDescending { card -> card.cost }
+                                .forEach { card ->
+                                    run {
+                                        System.err.println("searching best trade for cards")
+                                        searchBestTrade(card, gameState, actionPlan)
+                                    }
+                                }
+                    }
+
+                    while (gameState.hand
+                                    .filter { card -> card.cost <= gameState.me().mana && card.type == CREATURE }
+                                    .sortedByDescending { card -> card.cost }
+                                    .isNotEmpty() && gameState.me().mana >= 0) {
+                        val cardToPlay: Card? = gameState.hand
                                 .filter { card -> card.cost <= gameState.me().mana && card.type == CREATURE }
                                 .sortedByDescending { card -> card.cost }
-                                .isNotEmpty() && gameState.me().mana >= 0) {
-                    val cardToPlay: Card? = gameState.hand
-                            .filter { card -> card.cost <= gameState.me().mana && card.type == CREATURE }
-                            .sortedByDescending { card -> card.cost }
-                            .firstOrNull()
-                    if (cardToPlay != null) {
-                        actionPlan.add(summonCreature(cardToPlay as Creature, gameState))
+                                .firstOrNull()
+                        if (cardToPlay != null) {
+                            actionPlan.add(summonCreature(cardToPlay as Creature, gameState))
+                        }
                     }
+
+                    //TODO attack more intelligently by making better trades
+                    gameState.board.myCards
+                            .filter { card -> !card.played && card.attack > 0 }
+                            .sortedBy { card -> card.cost }
+                            .forEach { card ->
+                                actionPlan.add(attackWithCreatureInBoard(card, opponentGuard?.instanceId ?: -1))
+                            }
                 }
-
-                //TODO attack more intelligently by making better trades
-                gameState.board.myCards
-                        .filter { card -> !card.played && card.attack > 0 }
-                        .sortedBy { card -> card.cost }
-                        .forEach { card -> actionPlan.add(attackWithCreatureInBoard(card, opponentGuard?.instanceId ?: -1)) }
             }
-        }
 
-        actionPlan.execute()
+            actionPlan.execute()
+        }
     }
 }
 
@@ -700,5 +705,16 @@ class Attack(private val attackerId: Int, private var opponentId: Int = -1) : Ac
 class Use(private val itemId: Int, private val targetId: Int = -1) : Action() {
     override fun toString(): String {
         return "USE $itemId $targetId"
+    }
+}
+
+class Benchmark {
+    companion object {
+        fun logTime(block: () -> Unit) {
+            val startTime = System.currentTimeMillis()
+            block.invoke()
+            val duration = System.currentTimeMillis() - startTime
+            System.err.println("$duration ms")
+        }
     }
 }
