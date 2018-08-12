@@ -32,18 +32,18 @@ fun main(args: Array<String>) {
                 actionPlan.execute()
             } else { // FIGHT
                 val nbOfSimulation = 30000
-                val simulations = mutableListOf<GameSimulation>()
+                val actionPlans = mutableListOf<ActionPlan>()
                 Benchmark.logTime("Simulation time") {
                     for (i in 0..nbOfSimulation) {
                         val simulation = GameSimulation(gameState.copy())
                         playSimulation(simulation)
                         simulation.eval()
-                        simulations.add(simulation)
+                        actionPlans.add(simulation.actionPlan)
                     }
                 }
 
-                val bestSimulation = simulations.sortedByDescending { it.score }.first()
-                bestSimulation.actionPlan.execute()
+                val bestPlan = actionPlans.sortedByDescending { it.score }.first()
+                bestPlan.execute()
             }
         }
     }
@@ -60,7 +60,7 @@ fun playSimulation(simulation: GameSimulation) {
         val card = gameState.hand.filter { it.cost <= gameState.me().mana && !it.analyzed}.getRandomElement()
         when (card) {
             is Creature -> actionPlan.add(summonCreature(card, gameState))
-            is RedItem -> { // FIXME can't use a red item on the hero
+            is RedItem -> {
                 if (gameState.board.opponentCards.size > 0) {
                     actionPlan.add(useItem(card, gameState, gameState.board.opponentCards.getRandomElement().instanceId))
                 } else {
@@ -243,28 +243,25 @@ class Game(private var round: Int, val state: State) {
 
 class GameSimulation(val gameState: State) {
     val actionPlan: ActionPlan = ActionPlan(mutableListOf())
-    var score: Double = 0.0
 
     fun eval() {
-        this.score = 0.0
-
         // My cards
-        score += gameState.board.myCards.sumByDouble { getCardRating(it) }
+        actionPlan.score += gameState.board.myCards.sumByDouble { getCardRating(it) }
 
         // Opponent's cards
-        score -= gameState.board.opponentCards.sumByDouble { getCardRating(it) }
+        actionPlan.score -= gameState.board.opponentCards.sumByDouble { getCardRating(it) }
 
         // My health
-        score += gameState.me().health
+        actionPlan.score += gameState.me().health
 
         // Opponent's health
-        score -= gameState.opponent().health
+        actionPlan.score -= gameState.opponent().health
 
         // My maximum expected life at next turn
-        score -= gameState.board.opponentCards.sumBy { it.attack }
+        actionPlan.score -= gameState.board.opponentCards.sumBy { it.attack }
 
         // My deck size compared to the enemy's
-        score += gameState.me().deckSize - gameState.opponent().deckSize
+        actionPlan.score += gameState.me().deckSize - gameState.opponent().deckSize
     }
 }
 
@@ -324,6 +321,8 @@ enum class CardType {
 }
 
 class ActionPlan(private var actions: MutableList<Action>) {
+    var score = 0.0
+
     fun execute() {
         if (actions.isEmpty()) {
             add(Pass())
@@ -342,6 +341,8 @@ class ActionPlan(private var actions: MutableList<Action>) {
     fun addAll(newActions: List<Action>) {
         actions.addAll(newActions)
     }
+
+
 }
 
 abstract class Action
