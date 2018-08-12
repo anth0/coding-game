@@ -60,7 +60,7 @@ fun playSimulation(simulation: GameSimulation) {
         val card = gameState.hand.filter { it.cost <= gameState.me().mana }.getRandomElement()
         when (card) {
             is Creature -> actionPlan.add(summonCreature(card, gameState))
-            is RedItem -> {
+            is RedItem -> { // FIXME can't use a red item on the hero
                 val targetId = if (gameState.board.opponentCards.size > 0) gameState.board.opponentCards.getRandomElement().instanceId else -1
                 actionPlan.add(useItem(card, gameState, targetId))
             }
@@ -78,7 +78,7 @@ fun playSimulation(simulation: GameSimulation) {
 
     // Attack
     var hasCreatureToPlay = gameState.board.myCards.any { !it.played && it.attack > 0 }
-    while (hasCreatureToPlay) {
+    while (hasCreatureToPlay) { //FIXME check for infinite loop
         val creature = gameState.board.myCards.filter { !it.played && it.attack > 0 }.getRandomElement()
         var target: Creature? = null
         if (gameState.board.opponentCards.size != 0) {
