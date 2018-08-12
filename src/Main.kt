@@ -114,15 +114,14 @@ fun useItem(item: Item, gameState: State, targetId: Int = -1): Action {
 fun attack(attacker: Creature, target: Creature?, gameState: State): Action {
     attacker.played = true
 
-    if (target != null) {
+    if (target == null) {
+        gameState.opponent().health -= attacker.attack
+    } else {
         if (attacksKillTarget(attacker, target)) {
-            System.err.println("Removing $target from board")
             gameState.board.opponentCards.remove(target)
         } else if (target.abilities.contains(Ability.WARD)) {
-            System.err.println("Removing WARD from $target")
             gameState.board.opponentCards.find { card -> card.id == target.id }?.abilities?.remove(WARD)
         } else if (!target.abilities.contains(Ability.WARD)) {
-            System.err.println("Reducing life of $target")
             gameState.board.opponentCards.first { card -> card.id == target.id }.defense -= attacker.attack
         }
     }
@@ -245,6 +244,12 @@ class GameSimulation(val gameState: State) {
     val actionPlan: ActionPlan = ActionPlan(mutableListOf())
 
     fun eval() {
+
+        if (gameState.opponent().health <= 0) {
+            actionPlan.score = Double.MAX_VALUE
+            return
+        }
+
         // My cards
         actionPlan.score += gameState.board.myCards.sumByDouble { getCardRating(it) }
 
