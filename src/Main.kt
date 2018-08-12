@@ -55,25 +55,31 @@ fun playSimulation(simulation: GameSimulation) {
     val actionPlan = simulation.actionPlan
 
     // Summon cards and use items
-    var hasCardsToSummon = gameState.hand.any { it.cost <= gameState.me().mana }
+    var hasCardsToSummon = gameState.hand.any { it.cost <= gameState.me().mana && !it.analyzed }
     while (hasCardsToSummon) {
-        val card = gameState.hand.filter { it.cost <= gameState.me().mana }.getRandomElement()
+        val card = gameState.hand.filter { it.cost <= gameState.me().mana && !it.analyzed}.getRandomElement()
         when (card) {
             is Creature -> actionPlan.add(summonCreature(card, gameState))
             is RedItem -> { // FIXME can't use a red item on the hero
+                if (gameState.board.opponentCards.size > 0) {
+                    actionPlan.add(useItem(card, gameState, gameState.board.opponentCards.getRandomElement().instanceId))
+                } else {
+                    card.analyzed = true
+                }
+            }
+            is GreenItem -> {
+                if (gameState.board.myCards.size > 0) {
+                    actionPlan.add(useItem(card, gameState, gameState.board.myCards.getRandomElement().instanceId))
+                } else {
+                    card.analyzed = true
+                }
+            }
+            is BlueItem -> {
                 val targetId = if (gameState.board.opponentCards.size > 0) gameState.board.opponentCards.getRandomElement().instanceId else -1
                 actionPlan.add(useItem(card, gameState, targetId))
             }
-            is GreenItem -> {
-                val targetId = if (gameState.board.myCards.size > 0) gameState.board.myCards.getRandomElement().instanceId else -1
-                actionPlan.add(useItem(card, gameState, targetId))
-            }
-            is BlueItem -> {
-                val targetId = if (gameState.board.myCards.size > 0) gameState.board.myCards.getRandomElement().instanceId else -1
-                actionPlan.add(useItem(card, gameState, targetId))
-            }
         }
-        hasCardsToSummon = gameState.hand.any { it.cost <= gameState.me().mana }
+        hasCardsToSummon = gameState.hand.any { it.cost <= gameState.me().mana && !it.analyzed }
     }
 
     // Attack
@@ -290,6 +296,8 @@ data class Player(var health: Int, var mana: Int, var deckSize: Int, var runes: 
 
 abstract class Card(val id: Int, val instanceId: Int, val location: Int, val type: CardType, val cost: Int, var attack: Int, var defense: Int, val abilities: MutableList<Ability>,
                     val myHealthChange: Int, val opponentHealthChange: Int, val cardDraw: Int, var played: Boolean = false) {
+    var analyzed = false
+
     override fun toString(): String = instanceId.toString()
     fun hasAbilities(): Boolean {
         return abilities.isNotEmpty()
