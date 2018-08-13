@@ -2,6 +2,8 @@ import Ability.*
 import CardType.*
 import java.util.*
 
+const val TIMEOUT = 95
+
 /**
  * Auto-generated code below aims at helping you parse
  * the standard input according to the problem statement.
@@ -25,7 +27,7 @@ fun playSimulation(simulation: GameSimulation) {
     // Summon cards and use items
     var hasCardsToSummon = gameState.hand.any { it.cost <= gameState.me().mana && !it.analyzed }
     while (hasCardsToSummon) {
-        val card = gameState.hand.filter { it.cost <= gameState.me().mana && !it.analyzed}.getRandomElement()
+        val card = gameState.hand.filter { it.cost <= gameState.me().mana && !it.analyzed }.getRandomElement()
         when (card) {
             is Creature -> actionPlan.add(summonCreature(card, gameState))
             is RedItem -> {
@@ -52,7 +54,7 @@ fun playSimulation(simulation: GameSimulation) {
 
     // Attack
     var hasCreatureToPlay = gameState.board.myCards.any { !it.played && it.attack > 0 }
-    while (hasCreatureToPlay) { //FIXME check for infinite loop
+    while (hasCreatureToPlay) {
         val creature = gameState.board.myCards.filter { !it.played && it.attack > 0 }.getRandomElement()
         var target: Creature? = null
         if (gameState.board.opponentCards.size != 0) {
@@ -74,7 +76,7 @@ fun playSimulation(simulation: GameSimulation) {
 
     // Be attacked
     var enemyHasCreatureToPlay = gameState.board.opponentCards.any { !it.played && it.attack > 0 }
-    while (enemyHasCreatureToPlay) { //FIXME check for infinite loop
+    while (enemyHasCreatureToPlay) {
         val creature = gameState.board.opponentCards.filter { !it.played && it.attack > 0 }.getRandomElement()
         var target: Creature? = null
         if (gameState.board.myCards.size != 0) {
@@ -151,6 +153,7 @@ fun attacksKillTarget(attacker: Card, target: Card): Boolean {
 fun searchMostRatedCard(state: State): Int {
     return arrayListOf(state.hand[0], state.hand[1], state.hand[2]).map { getCardRating(it) }.indexOfMax()
 }
+
 val repartition = mutableListOf(2, 7, 6, 7, 4, 2, 1, 1)
 fun searchEfficientCurve(state: State): Int {
     val needItem = state.deck.filter { card -> card.type != CREATURE }.size < state.deck.size / 5
@@ -254,6 +257,7 @@ class Bot {
             }
         }
     }
+
     fun think() {
         actionPlan = ActionPlan(mutableListOf())
 
@@ -263,33 +267,29 @@ class Bot {
             state.deck.add(state.hand[efficientIndexCard])
             actionPlan.add(Pick(efficientIndexCard))
         } else {
-            var nbOfSimulation = 0
-            var bestActionPlan: ActionPlan? = null
-            val startTime = System.currentTimeMillis()
-            var now = System.currentTimeMillis() - startTime
-
-            while(now < 95) {
+            var bestActionPlan = actionPlan
+            Benchmark.runUntil(TIMEOUT) {
                 val simulation = GameSimulation(state.copy())
                 playSimulation(simulation)
                 simulation.eval()
 
-                if (bestActionPlan == null || simulation.actionPlan.score > bestActionPlan.score) {
+                if (simulation.actionPlan.score > bestActionPlan.score) {
                     bestActionPlan = simulation.actionPlan
                 }
-
-                nbOfSimulation++
-                now = System.currentTimeMillis() - startTime
             }
-            log("$nbOfSimulation simulations ran")
-            bestActionPlan!!.execute()
+            actionPlan = bestActionPlan
+            log("best score is ${bestActionPlan.score}")
         }
     }
+
     fun write() {
         actionPlan.execute()
     }
 }
-class GameSimulation(val gameState: State) {
-    val actionPlan: ActionPlan = ActionPlan(mutableListOf())
+
+class GameSimulation(
+        val gameState: State,
+        val actionPlan: ActionPlan = ActionPlan(mutableListOf())) {
 
     fun eval() {
 
@@ -298,20 +298,20 @@ class GameSimulation(val gameState: State) {
             return
         }
 
-        // My cards
-        actionPlan.score += gameState.board.myCards.sumByDouble { getCardRating(it) }
+        // My board
+        actionPlan.score = gameState.board.myCards.sumByDouble { getCardRating(it) } * 2
 
-        // Opponent's cards
-        actionPlan.score -= gameState.board.opponentCards.sumByDouble { getCardRating(it) }
+        // Opponent's board
+        actionPlan.score -= gameState.board.opponentCards.sumByDouble { getCardRating(it) } * 2
 
         // My health
-        actionPlan.score += (gameState.me().health / 2)
+        actionPlan.score += (gameState.me().health / 3)
 
         // Opponent's health
-        actionPlan.score -= (gameState.opponent().health / 2)
+        actionPlan.score -= gameState.opponent().health
 
         // My deck size compared to the enemy's
-        //actionPlan.score += gameState.me().deckSize - gameState.opponent().deckSize
+        actionPlan.score += gameState.me().deckSize - gameState.opponent().deckSize
 
         // Nb of cards in hand
         actionPlan.score += (gameState.hand.size)
@@ -319,10 +319,10 @@ class GameSimulation(val gameState: State) {
 }
 
 data class State(
-    val board: Board = Board(mutableListOf(), mutableListOf()),
-    var players: List<Player> = listOf(),
-    var hand: MutableList<Card> = mutableListOf(),
-    var deck: MutableList<Card> = mutableListOf())  {
+        val board: Board = Board(mutableListOf(), mutableListOf()),
+        var players: List<Player> = listOf(),
+        var hand: MutableList<Card> = mutableListOf(),
+        var deck: MutableList<Card> = mutableListOf()) {
 
     fun me(): Player {
         return players[0]
@@ -378,10 +378,11 @@ enum class CardType {
 }
 
 class ActionPlan(private var actions: MutableList<Action>) {
-    var score = Double.MIN_VALUE
+    var score = Double.NEGATIVE_INFINITY
 
     fun execute() {
         if (actions.isEmpty()) {
+            log("No action found in the action plan!")
             add(Pass())
         }
         println(actions.joinToString(";"))
@@ -432,6 +433,16 @@ class Benchmark {
             val duration = System.currentTimeMillis() - startTime
             System.err.println("$text -> $duration ms")
         }
+
+        fun runUntil(timeout: Int, block: () -> Unit) {
+            val startTime = System.currentTimeMillis()
+            var iterations = 0
+            while (System.currentTimeMillis() - startTime < timeout) {
+                block.invoke()
+                iterations++
+            }
+            log("$iterations simulations")
+        }
     }
 }
 
@@ -452,8 +463,8 @@ fun <T : Double> Iterable<T>.indexOfMax(): Int {
 }
 
 fun <E> List<E>.getRandomElement() = this[Random().nextInt(this.size)]
-fun <T : Creature> List<T>.hasGuards() : Boolean = this.any { it.abilities.contains(GUARD) }
-fun <T : Creature> List<T>.guards() : List<T> = this.filter{ it.abilities.contains(GUARD) }
+fun <T : Creature> List<T>.hasGuards(): Boolean = this.any { it.abilities.contains(GUARD) }
+fun <T : Creature> List<T>.guards(): List<T> = this.filter { it.abilities.contains(GUARD) }
 
 fun log(text: String) {
     System.err.println(text)
