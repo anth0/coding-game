@@ -9,12 +9,10 @@ import java.util.*
 fun main(args: Array<String>) {
     val input = Scanner(System.`in`)
     val game = initGame()
-    val actionPlan = ActionPlan(mutableListOf())
 
     // game loop
     while (true) {
         game.nextRound()
-        actionPlan.reinit()
         val gameState = updateGameState(game.state, input)
 
         Benchmark.logTime("Total play") {
@@ -25,25 +23,30 @@ fun main(args: Array<String>) {
                 val firstCard = gameState.hand[0]
                 val secondCard = gameState.hand[1]
                 val thirdCard = gameState.hand[2]
-                val bestCardIndex = searchMostRatedCard(firstCard, secondCard, thirdCard, deck)
-                deck.add(gameState.hand[bestCardIndex])
-                actionPlan.add(Pick(bestCardIndex))
-
-                actionPlan.execute()
+                //val bestCardIndex = searchMostRatedCard(firstCard, secondCard, thirdCard, deck)
+                val efficientIndexCard = searchEfficientCurve(firstCard, secondCard, thirdCard, deck)
+                deck.add(gameState.hand[efficientIndexCard])
+                ActionPlan(mutableListOf(Pick(efficientIndexCard))).execute()
             } else { // FIGHT
-                val nbOfSimulation = 30000
-                val actionPlans = mutableListOf<ActionPlan>()
-                Benchmark.logTime("Simulation time") {
-                    for (i in 0..nbOfSimulation) {
-                        val simulation = GameSimulation(gameState.copy())
-                        playSimulation(simulation)
-                        simulation.eval()
-                        actionPlans.add(simulation.actionPlan)
-                    }
-                }
+                var nbOfSimulation = 0
+                var bestActionPlan: ActionPlan? = null
+                val startTime = System.currentTimeMillis()
+                var now = System.currentTimeMillis() - startTime
 
-                val bestPlan = actionPlans.sortedByDescending { it.score }.first()
-                bestPlan.execute()
+                while(now < 95) {
+                    val simulation = GameSimulation(gameState.copy())
+                    playSimulation(simulation)
+                    simulation.eval()
+
+                    if (bestActionPlan == null || simulation.actionPlan.score > bestActionPlan.score) {
+                        bestActionPlan = simulation.actionPlan
+                    }
+
+                    nbOfSimulation++
+                    now = System.currentTimeMillis() - startTime
+                }
+                log("$nbOfSimulation simulations ran")
+                bestActionPlan!!.execute()
             }
         }
     }
@@ -103,6 +106,28 @@ fun playSimulation(simulation: GameSimulation) {
 
         hasCreatureToPlay = gameState.board.myCards.any { !it.played && it.attack > 0 }
     }
+
+    // Be attacked
+    var enemyHasCreatureToPlay = gameState.board.opponentCards.any { !it.played && it.attack > 0 }
+    while (enemyHasCreatureToPlay) { //FIXME check for infinite loop
+        val creature = gameState.board.opponentCards.filter { !it.played && it.attack > 0 }.getRandomElement()
+        var target: Creature? = null
+        if (gameState.board.myCards.size != 0) {
+            if (gameState.board.myCards.hasGuards()) {
+                target = gameState.board.myCards.guards().getRandomElement()
+            } else {
+                // Fetching random int from 0 to size + 1 to have an index also for enemy hero
+                // Then Int which is out of bound represents the enemy hero
+                val randomTargetIndex = Random().nextInt(gameState.board.myCards.size + 1)
+                if (randomTargetIndex <= gameState.board.myCards.size) {
+                    gameState.board.myCards.getRandomElement()
+                }
+            }
+        }
+        attackMyself(creature, target, gameState)
+
+        enemyHasCreatureToPlay = gameState.board.opponentCards.any { !it.played && it.attack > 0 }
+    }
 }
 
 fun useItem(item: Item, gameState: State, targetId: Int = -1): Action {
@@ -127,6 +152,22 @@ fun attack(attacker: Creature, target: Creature?, gameState: State): Action {
     }
 
     return Attack(attacker.instanceId, target?.instanceId ?: -1)
+}
+
+fun attackMyself(attacker: Creature, target: Creature?, gameState: State) {
+    attacker.played = true
+
+    if (target == null) {
+        gameState.me().health -= attacker.attack
+    } else {
+        if (attacksKillTarget(attacker, target)) {
+            gameState.board.myCards.remove(target)
+        } else if (target.abilities.contains(Ability.WARD)) {
+            gameState.board.myCards.find { card -> card.id == target.id }?.abilities?.remove(WARD)
+        } else if (!target.abilities.contains(Ability.WARD)) {
+            gameState.board.myCards.first { card -> card.id == target.id }.defense -= attacker.attack
+        }
+    }
 }
 
 fun summonCreature(cardToPlay: Creature, gameState: State): Action {
@@ -193,6 +234,29 @@ fun updateGameState(gameState: State, input: Scanner): State {
 
 fun searchMostRatedCard(firstCard: Card, secondCard: Card, thirdCard: Card, deck: MutableList<Card>): Int {
     return arrayListOf(firstCard, secondCard, thirdCard).map { getCardRating(it) }.indexOfMax()
+}
+val repartition = mutableListOf(2, 7, 6, 7, 4, 2, 1, 1)
+fun searchEfficientCurve(firstCard: Card, secondCard: Card, thirdCard: Card, deck: MutableList<Card>): Int {
+    val needItem = deck.filter { card -> card.type != CREATURE }.size < deck.size / 5
+    val bestEffectiveCard = arrayOf(firstCard, secondCard, thirdCard)
+            .maxBy { card -> repartition[Math.min(card.cost, 7)] + getCardRating(card) + if (needItem && card.type != CREATURE) 10 else 0 }
+
+    when (bestEffectiveCard) {
+        firstCard -> {
+            repartition[Math.min(firstCard.cost, 7)] = repartition[Math.min(firstCard.cost, 7)] - 1
+            return 0
+        }
+        secondCard -> {
+            repartition[Math.min(secondCard.cost, 7)] = repartition[Math.min(secondCard.cost, 7)] - 1
+            return 1
+        }
+        thirdCard -> {
+            repartition[Math.min(thirdCard.cost, 7)] = repartition[Math.min(thirdCard.cost, 7)] - 1
+            return 2
+        }
+    }
+
+    return 0
 }
 
 fun getCardRating(card: Card): Double {
@@ -326,7 +390,7 @@ enum class CardType {
 }
 
 class ActionPlan(private var actions: MutableList<Action>) {
-    var score = 0.0
+    var score = Double.MIN_VALUE
 
     fun execute() {
         if (actions.isEmpty()) {
