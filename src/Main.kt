@@ -7,48 +7,13 @@ import java.util.*
  * the standard input according to the problem statement.
  **/
 fun main(args: Array<String>) {
-    val input = Scanner(System.`in`)
-    val game = initGame()
+    val bot = Bot()
 
     // game loop
     while (true) {
-        game.nextRound()
-        val gameState = updateGameState(game.state, input)
-
-        Benchmark.logTime("Total play") {
-            val deck = gameState.deck
-
-            if (game.isInDraftPhase()) { // DRAFT
-
-                val firstCard = gameState.hand[0]
-                val secondCard = gameState.hand[1]
-                val thirdCard = gameState.hand[2]
-                //val bestCardIndex = searchMostRatedCard(firstCard, secondCard, thirdCard, deck)
-                val efficientIndexCard = searchEfficientCurve(firstCard, secondCard, thirdCard, deck)
-                deck.add(gameState.hand[efficientIndexCard])
-                ActionPlan(mutableListOf(Pick(efficientIndexCard))).execute()
-            } else { // FIGHT
-                var nbOfSimulation = 0
-                var bestActionPlan: ActionPlan? = null
-                val startTime = System.currentTimeMillis()
-                var now = System.currentTimeMillis() - startTime
-
-                while(now < 95) {
-                    val simulation = GameSimulation(gameState.copy())
-                    playSimulation(simulation)
-                    simulation.eval()
-
-                    if (bestActionPlan == null || simulation.actionPlan.score > bestActionPlan.score) {
-                        bestActionPlan = simulation.actionPlan
-                    }
-
-                    nbOfSimulation++
-                    now = System.currentTimeMillis() - startTime
-                }
-                log("$nbOfSimulation simulations ran")
-                bestActionPlan!!.execute()
-            }
-        }
+        bot.read()
+        bot.think()
+        bot.write()
     }
 }
 
@@ -183,61 +148,15 @@ fun attacksKillTarget(attacker: Card, target: Card): Boolean {
     return !target.abilities.contains(WARD) && (attacker.abilities.contains(LETHAL) || attacker.attack >= target.defense)
 }
 
-fun initGame(): Game {
-    val players = listOf(
-            Player(30, 1, 30, 0),
-            Player(30, 1, 30, 0))
-    val board = Board(mutableListOf(), mutableListOf())
-    val state = State(board, players, mutableListOf(), mutableListOf())
-
-    return Game(0, state)
-}
-
-fun updateGameState(gameState: State, input: Scanner): State {
-
-    gameState.me().update(input.nextInt(), input.nextInt(), input.nextInt(), input.nextInt())
-    gameState.opponent().update(input.nextInt(), input.nextInt(), input.nextInt(), input.nextInt())
-
-    gameState.hand.clear()
-    gameState.board.clear()
-
-    val opponentHandSize = input.nextInt()
-    val cardsInPlayCount = input.nextInt()
-    for (i in 0 until cardsInPlayCount) {
-        val cardNumber = input.nextInt()
-        val instanceId = input.nextInt()
-        val location = input.nextInt()
-        val cardType = CardType.values()[input.nextInt()]
-        val cost = input.nextInt()
-        val attack = input.nextInt()
-        val defense = input.nextInt()
-        val abilities = input.next().filter { char -> char != '-' }.map { ability -> Ability.fromCode(ability.toString()) }.toMutableList()
-        val myHealthChange = input.nextInt()
-        val opponentHealthChange = input.nextInt()
-        val cardDraw = input.nextInt()
-        val card = when (cardType) {
-            CREATURE -> Creature(cardNumber, instanceId, location, cost, attack, defense, abilities, myHealthChange, opponentHealthChange, cardDraw)
-            GREEN_ITEM -> GreenItem(cardNumber, instanceId, location, cost, attack, defense, abilities, myHealthChange, opponentHealthChange, cardDraw)
-            RED_ITEM -> RedItem(cardNumber, instanceId, location, cost, attack, defense, abilities, myHealthChange, opponentHealthChange, cardDraw)
-            BLUE_ITEM -> BlueItem(cardNumber, instanceId, location, cost, attack, defense, abilities, myHealthChange, opponentHealthChange, cardDraw)
-        }
-
-        when (location) {
-            0 -> gameState.hand.add(card)
-            1 -> gameState.board.myCards.add(card as Creature)
-            -1 -> gameState.board.opponentCards.add(card as Creature)
-        }
-    }
-
-    return gameState
-}
-
-fun searchMostRatedCard(firstCard: Card, secondCard: Card, thirdCard: Card, deck: MutableList<Card>): Int {
-    return arrayListOf(firstCard, secondCard, thirdCard).map { getCardRating(it) }.indexOfMax()
+fun searchMostRatedCard(state: State): Int {
+    return arrayListOf(state.hand[0], state.hand[1], state.hand[2]).map { getCardRating(it) }.indexOfMax()
 }
 val repartition = mutableListOf(2, 7, 6, 7, 4, 2, 1, 1)
-fun searchEfficientCurve(firstCard: Card, secondCard: Card, thirdCard: Card, deck: MutableList<Card>): Int {
-    val needItem = deck.filter { card -> card.type != CREATURE }.size < deck.size / 5
+fun searchEfficientCurve(state: State): Int {
+    val needItem = state.deck.filter { card -> card.type != CREATURE }.size < state.deck.size / 5
+    val firstCard = state.hand[0]
+    val secondCard = state.hand[1]
+    val thirdCard = state.hand[2]
     val bestEffectiveCard = arrayOf(firstCard, secondCard, thirdCard)
             .maxBy { card -> repartition[Math.min(card.cost, 7)] + getCardRating(card) + if (needItem && card.type != CREATURE) 10 else 0 }
 
@@ -294,16 +213,81 @@ fun getAbilitiesRating(card: Card): Double {
 /*****************************************************************************************************
  ******************************************   MODELS **************************************************
  ******************************************************************************************************/
-class Game(private var round: Int, val state: State) {
-    fun nextRound() {
-        round++
-    }
 
-    fun isInDraftPhase(): Boolean {
-        return round <= 30
+class Bot {
+    private val input = Scanner(System.`in`)
+
+    private lateinit var state: State
+    private lateinit var actionPlan: ActionPlan
+
+    fun read() {
+        state = State()
+        state.players = listOf(
+                Player(input.nextInt(), input.nextInt(), input.nextInt(), input.nextInt()),
+                Player(input.nextInt(), input.nextInt(), input.nextInt(), input.nextInt()))
+
+        val opponentHandSize = input.nextInt()
+        val cardsInPlayCount = input.nextInt()
+        for (i in 0 until cardsInPlayCount) {
+            val cardNumber = input.nextInt()
+            val instanceId = input.nextInt()
+            val location = input.nextInt()
+            val cardType = CardType.values()[input.nextInt()]
+            val cost = input.nextInt()
+            val attack = input.nextInt()
+            val defense = input.nextInt()
+            val abilities = input.next().filter { char -> char != '-' }.map { ability -> Ability.fromCode(ability.toString()) }.toMutableList()
+            val myHealthChange = input.nextInt()
+            val opponentHealthChange = input.nextInt()
+            val cardDraw = input.nextInt()
+            val card = when (cardType) {
+                CREATURE -> Creature(cardNumber, instanceId, location, cost, attack, defense, abilities, myHealthChange, opponentHealthChange, cardDraw)
+                GREEN_ITEM -> GreenItem(cardNumber, instanceId, location, cost, attack, defense, abilities, myHealthChange, opponentHealthChange, cardDraw)
+                RED_ITEM -> RedItem(cardNumber, instanceId, location, cost, attack, defense, abilities, myHealthChange, opponentHealthChange, cardDraw)
+                BLUE_ITEM -> BlueItem(cardNumber, instanceId, location, cost, attack, defense, abilities, myHealthChange, opponentHealthChange, cardDraw)
+            }
+
+            when (location) {
+                0 -> state.hand.add(card)
+                1 -> state.board.myCards.add(card as Creature)
+                -1 -> state.board.opponentCards.add(card as Creature)
+            }
+        }
+    }
+    fun think() {
+        actionPlan = ActionPlan(mutableListOf())
+
+        if (state.isInDraftPhase()) {
+            //val bestCardIndex = searchMostRatedCard(firstCard, secondCard, thirdCard, deck)
+            val efficientIndexCard = searchEfficientCurve(state)
+            state.deck.add(state.hand[efficientIndexCard])
+            actionPlan.add(Pick(efficientIndexCard))
+        } else {
+            var nbOfSimulation = 0
+            var bestActionPlan: ActionPlan? = null
+            val startTime = System.currentTimeMillis()
+            var now = System.currentTimeMillis() - startTime
+
+            while(now < 95) {
+                val simulation = GameSimulation(state.copy())
+                playSimulation(simulation)
+                simulation.eval()
+
+                if (bestActionPlan == null || simulation.actionPlan.score > bestActionPlan.score) {
+                    bestActionPlan = simulation.actionPlan
+                }
+
+                nbOfSimulation++
+                now = System.currentTimeMillis() - startTime
+            }
+            log("$nbOfSimulation simulations ran")
+            bestActionPlan!!.execute()
+        }
+    }
+    fun write() {
+        actionPlan.execute()
     }
 }
-
 class GameSimulation(val gameState: State) {
     val actionPlan: ActionPlan = ActionPlan(mutableListOf())
 
@@ -334,7 +318,12 @@ class GameSimulation(val gameState: State) {
     }
 }
 
-data class State(val board: Board, private var players: List<Player>, val hand: MutableList<Card>, val deck: MutableList<Card>) {
+data class State(
+    val board: Board = Board(mutableListOf(), mutableListOf()),
+    var players: List<Player> = listOf(),
+    var hand: MutableList<Card> = mutableListOf(),
+    var deck: MutableList<Card> = mutableListOf())  {
+
     fun me(): Player {
         return players[0]
     }
@@ -342,14 +331,13 @@ data class State(val board: Board, private var players: List<Player>, val hand: 
     fun opponent(): Player {
         return players[1]
     }
-}
 
-data class Board(val myCards: MutableList<Creature>, val opponentCards: MutableList<Creature>) {
-    fun clear() {
-        myCards.clear()
-        opponentCards.clear()
+    fun isInDraftPhase(): Boolean {
+        return players[0].mana <= 0
     }
 }
+
+data class Board(val myCards: MutableList<Creature>, val opponentCards: MutableList<Creature>) {}
 
 data class Player(var health: Int, var mana: Int, var deckSize: Int, var runes: Int) {
     fun update(newHealth: Int, newMana: Int, newDeckSize: Int, newRunes: Int) {
@@ -402,16 +390,6 @@ class ActionPlan(private var actions: MutableList<Action>) {
     fun add(action: Action) {
         actions.add(action)
     }
-
-    fun reinit() {
-        actions.clear()
-    }
-
-    fun addAll(newActions: List<Action>) {
-        actions.addAll(newActions)
-    }
-
-
 }
 
 abstract class Action
