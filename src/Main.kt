@@ -321,16 +321,16 @@ class GameSimulation(val gameState: State) {
         actionPlan.score -= gameState.board.opponentCards.sumByDouble { getCardRating(it) }
 
         // My health
-        actionPlan.score += gameState.me().health
+        actionPlan.score += (gameState.me().health / 2)
 
         // Opponent's health
-        actionPlan.score -= gameState.opponent().health
-
-        // My maximum expected life at next turn
-        actionPlan.score -= gameState.board.opponentCards.sumBy { it.attack }
+        actionPlan.score -= (gameState.opponent().health / 2)
 
         // My deck size compared to the enemy's
-        actionPlan.score += gameState.me().deckSize - gameState.opponent().deckSize
+        //actionPlan.score += gameState.me().deckSize - gameState.opponent().deckSize
+
+        // Nb of cards in hand
+        actionPlan.score += (gameState.hand.size)
     }
 }
 
