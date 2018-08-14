@@ -65,7 +65,7 @@ fun playSimulation(simulation: GameSimulation) {
                 // Then Int which is out of bound represents the enemy hero
                 val randomTargetIndex = Random().nextInt(gameState.board.opponentCards.size + 1)
                 if (randomTargetIndex <= gameState.board.opponentCards.size) {
-                    gameState.board.opponentCards.getRandomElement()
+                    target = gameState.board.opponentCards.getRandomElement()
                 }
             }
         }
@@ -73,7 +73,7 @@ fun playSimulation(simulation: GameSimulation) {
 
         hasCreatureToPlay = gameState.board.myCards.any { !it.played && it.attack > 0 }
     }
-
+/*
     // Be attacked
     var enemyHasCreatureToPlay = gameState.board.opponentCards.any { !it.played && it.attack > 0 }
     while (enemyHasCreatureToPlay) {
@@ -91,10 +91,10 @@ fun playSimulation(simulation: GameSimulation) {
                 }
             }
         }
-        attackMyself(creature, target, gameState)
+        attack(creature, target, gameState)
 
         enemyHasCreatureToPlay = gameState.board.opponentCards.any { !it.played && it.attack > 0 }
-    }
+    }*/
 }
 
 fun useItem(item: Item, gameState: State, targetId: Int = -1): Action {
@@ -107,48 +107,45 @@ fun attack(attacker: Creature, target: Creature?, gameState: State): Action {
     attacker.played = true
 
     if (target == null) {
-        gameState.opponent().health -= attacker.attack
+        // who is the attacker?
+        if (gameState.board.myCards.any { it.instanceId == attacker.instanceId }) {
+            gameState.opponent().health -= attacker.attack
+        } else {
+            gameState.me().health -= attacker.attack
+        }
     } else {
-        if (attacksKillTarget(attacker, target)) {
-            gameState.board.opponentCards.remove(target)
-        } else if (target.abilities.contains(Ability.WARD)) {
-            gameState.board.opponentCards.find { card -> card.id == target.id }?.abilities?.remove(WARD)
-        } else if (!target.abilities.contains(Ability.WARD)) {
-            gameState.board.opponentCards.first { card -> card.id == target.id }.defense -= attacker.attack
+        // Update opponent's board
+        when {
+            attacksKillTarget(attacker, target) -> gameState.board.opponentCards.remove(target)
+            target.abilities.contains(WARD) && target.attack > 0 -> gameState.board.opponentCards.first { card -> card.instanceId == target.instanceId }.abilities.remove(WARD)
+            else -> gameState.board.opponentCards.first { card -> card.instanceId == target.instanceId }.defense -= attacker.attack
+        }
+
+        // Update my board
+        when {
+            attacksKillTarget(target, attacker) -> gameState.board.myCards.remove(attacker)
+            target.abilities.contains(WARD) && target.attack > 0 -> gameState.board.myCards.first { card -> card.instanceId == attacker.instanceId }.abilities.remove(WARD)
+            else -> gameState.board.myCards.first { card -> card.instanceId == attacker.instanceId }.defense -= target.attack
         }
     }
 
     return Attack(attacker.instanceId, target?.instanceId ?: -1)
 }
 
-fun attackMyself(attacker: Creature, target: Creature?, gameState: State) {
-    attacker.played = true
-
-    if (target == null) {
-        gameState.me().health -= attacker.attack
-    } else {
-        if (attacksKillTarget(attacker, target)) {
-            gameState.board.myCards.remove(target)
-        } else if (target.abilities.contains(Ability.WARD)) {
-            gameState.board.myCards.find { card -> card.id == target.id }?.abilities?.remove(WARD)
-        } else if (!target.abilities.contains(Ability.WARD)) {
-            gameState.board.myCards.first { card -> card.id == target.id }.defense -= attacker.attack
-        }
-    }
+fun attacksKillTarget(attacker: Card, target: Card): Boolean {
+    return !target.abilities.contains(WARD) && (attacker.abilities.contains(LETHAL) || attacker.attack >= target.defense)
 }
 
 fun summonCreature(cardToPlay: Creature, gameState: State): Action {
-    if (cardToPlay.abilities.contains(CHARGE)) {
-        gameState.board.myCards.add(cardToPlay)
-    }
+
+    cardToPlay.played = !cardToPlay.abilities.contains(CHARGE)
+
+    gameState.board.myCards.add(cardToPlay)
     gameState.me().mana -= cardToPlay.cost
     gameState.hand.remove(cardToPlay)
     return Summon(cardToPlay.instanceId)
 }
 
-fun attacksKillTarget(attacker: Card, target: Card): Boolean {
-    return !target.abilities.contains(WARD) && (attacker.abilities.contains(LETHAL) || attacker.attack >= target.defense)
-}
 
 fun searchMostRatedCard(state: State): Int {
     return arrayListOf(state.hand[0], state.hand[1], state.hand[2]).map { getCardRating(it) }.indexOfMax()
@@ -161,7 +158,7 @@ fun searchEfficientCurve(state: State): Int {
     val secondCard = state.hand[1]
     val thirdCard = state.hand[2]
     val bestEffectiveCard = arrayOf(firstCard, secondCard, thirdCard)
-            .maxBy { card -> repartition[Math.min(card.cost, 7)] + getCardRating(card) + if (needItem && card.type != CREATURE) 10 else 0 }
+            .maxBy { card -> repartition[Math.min(card.cost, 7)] + getDraftCardRating(card) + if (needItem && card.type != CREATURE) 10 else 0 }
 
     when (bestEffectiveCard) {
         firstCard -> {
@@ -181,12 +178,19 @@ fun searchEfficientCurve(state: State): Int {
     return 0
 }
 
+fun getDraftCardRating(card: Card): Double {
+    val rating: Double = when (card.type) {
+        CREATURE, GREEN_ITEM -> card.attack + card.defense + (card.myHealthChange / 2) - (card.opponentHealthChange / 2) + (card.cardDraw * 2) + getAbilitiesRating(card)
+        RED_ITEM, BLUE_ITEM -> (-card.attack - card.defense + (card.myHealthChange / 2) - (card.opponentHealthChange / 2) + (card.cardDraw * 2)).toDouble() // remove abilities is very situational
+    }
+    return rating - (card.cost * 2 + 1)
+}
+
 fun getCardRating(card: Card): Double {
-    val gain = (Math.abs(card.attack) + Math.abs(card.defense) + getAbilitiesRating(card) + (card.myHealthChange / 2) - (card.opponentHealthChange / 2) + (card.cardDraw * 2))
-    val cost = if (card.cost == 0) 1 else card.cost
-    val finalRating = gain / cost / 62 * 10
-    //log("Card $card rated $finalRating")
-    return finalRating
+    return when (card.type) {
+        CREATURE, GREEN_ITEM -> card.attack + card.defense + (card.myHealthChange / 2) - (card.opponentHealthChange / 2) + (card.cardDraw * 2) + getAbilitiesRating(card)
+        RED_ITEM, BLUE_ITEM -> (-card.attack - card.defense + (card.myHealthChange / 2) - (card.opponentHealthChange / 2) + (card.cardDraw * 2)).toDouble() // remove abilities is very situational
+    }
 }
 
 fun getAbilitiesRating(card: Card): Double {
@@ -207,7 +211,7 @@ fun getAbilitiesRating(card: Card): Double {
         rating += 3
     }
     if (card.abilities.contains(WARD)) {
-        rating += 2 + card.attack
+        rating += card.attack
     }
     return rating
 }
@@ -274,6 +278,7 @@ class Bot {
                 simulation.eval()
 
                 if (simulation.actionPlan.score > bestActionPlan.score) {
+                    log("best found")
                     bestActionPlan = simulation.actionPlan
                 }
             }
@@ -303,18 +308,20 @@ class GameSimulation(
 
         // Opponent's board
         actionPlan.score -= gameState.board.opponentCards.sumByDouble { getCardRating(it) } * 2
-
+/*
         // My health
-        actionPlan.score += (gameState.me().health / 3)
+        actionPlan.score += gameState.me().health / 3
 
         // Opponent's health
-        actionPlan.score -= gameState.opponent().health
+        actionPlan.score -= gameState.opponent().health / 3
+        */
 
         // My deck size compared to the enemy's
-        actionPlan.score += gameState.me().deckSize - gameState.opponent().deckSize
+        //actionPlan.score += gameState.me().deckSize - gameState.opponent().deckSize
 
         // Nb of cards in hand
-        actionPlan.score += (gameState.hand.size)
+        //actionPlan.score += (gameState.hand.size)
+        log("score ${actionPlan.score}")
     }
 }
 
