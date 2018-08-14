@@ -36,18 +36,26 @@ fun attack(attacker: Creature, target: Creature?, gameState: State): Action {
             gameState.me().health -= attacker.attack
         }
     } else {
+        var attackerCards = gameState.board.myCards
+        var targetCards = gameState.board.opponentCards
+
+        if (gameState.board.opponentCards.any { it.instanceId == attacker.instanceId }) {
+            attackerCards = gameState.board.opponentCards
+            targetCards = gameState.board.myCards
+        }
+
         // Update opponent's board
         when {
-            attacksKillTarget(attacker, target) -> gameState.board.opponentCards.remove(target)
-            target.abilities.contains(WARD) && target.attack > 0 -> gameState.board.opponentCards.first { card -> card.instanceId == target.instanceId }.abilities.remove(WARD)
-            else -> gameState.board.opponentCards.first { card -> card.instanceId == target.instanceId }.defense -= attacker.attack
+            attacksKillTarget(attacker, target) -> targetCards.remove(target)
+            target.abilities.contains(WARD) && target.attack > 0 -> targetCards.first { it.instanceId == target.instanceId }.abilities.remove(WARD)
+            else -> targetCards.first { it.instanceId == target.instanceId }.defense -= attacker.attack
         }
 
         // Update my board
         when {
-            attacksKillTarget(target, attacker) -> gameState.board.myCards.remove(attacker)
-            target.abilities.contains(WARD) && target.attack > 0 -> gameState.board.myCards.first { card -> card.instanceId == attacker.instanceId }.abilities.remove(WARD)
-            else -> gameState.board.myCards.first { card -> card.instanceId == attacker.instanceId }.defense -= target.attack
+            attacksKillTarget(target, attacker) -> attackerCards.remove(attacker)
+            target.abilities.contains(WARD) && target.attack > 0 -> attackerCards.first { it.instanceId == attacker.instanceId }.abilities.remove(WARD)
+            else -> attackerCards.first { it.instanceId == attacker.instanceId }.defense -= target.attack
         }
     }
 
@@ -231,22 +239,22 @@ class GameSimulation(
 
         // Opponent's board
         gameState.score -= gameState.board.opponentCards.sumByDouble { getCardRating(it) } * 2
-/*
+
         // My health
         gameState.score += gameState.me().health / 3
 
         // Opponent's health
         gameState.score -= gameState.opponent().health / 3
-        */
+
 
         // Remove points if mana left
         gameState.score -= gameState.me().mana
 
         // My deck size compared to the enemy's
-        //actionPlan.score += gameState.me().deckSize - gameState.opponent().deckSize
+        //gameState.score += gameState.me().deckSize - gameState.opponent().deckSize
 
         // Nb of cards in hand
-        //actionPlan.score += (gameState.hand.size)
+        //gameState.score += (gameState.hand.size)
     }
 
     fun play() {
