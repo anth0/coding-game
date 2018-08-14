@@ -19,84 +19,6 @@ fun main(args: Array<String>) {
     }
 }
 
-fun playSimulation(simulation: GameSimulation) {
-
-    val gameState = simulation.gameState
-    val actionPlan = simulation.actionPlan
-
-    // Summon cards and use items
-    var hasCardsToSummon = gameState.hand.any { it.cost <= gameState.me().mana && !it.analyzed }
-    while (hasCardsToSummon) {
-        val card = gameState.hand.filter { it.cost <= gameState.me().mana && !it.analyzed }.getRandomElement()
-        when (card) {
-            is Creature -> actionPlan.add(summonCreature(card, gameState))
-            is RedItem -> {
-                if (gameState.board.opponentCards.size > 0) {
-                    actionPlan.add(useItem(card, gameState, gameState.board.opponentCards.getRandomElement().instanceId))
-                } else {
-                    card.analyzed = true
-                }
-            }
-            is GreenItem -> {
-                if (gameState.board.myCards.size > 0) {
-                    actionPlan.add(useItem(card, gameState, gameState.board.myCards.getRandomElement().instanceId))
-                } else {
-                    card.analyzed = true
-                }
-            }
-            is BlueItem -> {
-                val targetId = if (gameState.board.opponentCards.size > 0) gameState.board.opponentCards.getRandomElement().instanceId else -1
-                actionPlan.add(useItem(card, gameState, targetId))
-            }
-        }
-        hasCardsToSummon = gameState.hand.any { it.cost <= gameState.me().mana && !it.analyzed }
-    }
-
-    // Attack
-    var hasCreatureToPlay = gameState.board.myCards.any { !it.played && it.attack > 0 }
-    while (hasCreatureToPlay) {
-        val creature = gameState.board.myCards.filter { !it.played && it.attack > 0 }.getRandomElement()
-        var target: Creature? = null
-        if (gameState.board.opponentCards.size != 0) {
-            if (gameState.board.opponentCards.hasGuards()) {
-                target = gameState.board.opponentCards.guards().getRandomElement()
-            } else {
-                // Fetching random int from 0 to size + 1 to have an index also for enemy hero
-                // Then Int which is out of bound represents the enemy hero
-                val randomTargetIndex = Random().nextInt(gameState.board.opponentCards.size + 1)
-                if (randomTargetIndex <= gameState.board.opponentCards.size) {
-                    target = gameState.board.opponentCards.getRandomElement()
-                }
-            }
-        }
-        actionPlan.add(attack(creature, target, gameState))
-
-        hasCreatureToPlay = gameState.board.myCards.any { !it.played && it.attack > 0 }
-    }
-/*
-    // Be attacked
-    var enemyHasCreatureToPlay = gameState.board.opponentCards.any { !it.played && it.attack > 0 }
-    while (enemyHasCreatureToPlay) {
-        val creature = gameState.board.opponentCards.filter { !it.played && it.attack > 0 }.getRandomElement()
-        var target: Creature? = null
-        if (gameState.board.myCards.size != 0) {
-            if (gameState.board.myCards.hasGuards()) {
-                target = gameState.board.myCards.guards().getRandomElement()
-            } else {
-                // Fetching random int from 0 to size + 1 to have an index also for enemy hero
-                // Then Int which is out of bound represents the enemy hero
-                val randomTargetIndex = Random().nextInt(gameState.board.myCards.size + 1)
-                if (randomTargetIndex <= gameState.board.myCards.size) {
-                    gameState.board.myCards.getRandomElement()
-                }
-            }
-        }
-        attack(creature, target, gameState)
-
-        enemyHasCreatureToPlay = gameState.board.opponentCards.any { !it.played && it.attack > 0 }
-    }*/
-}
-
 fun useItem(item: Item, gameState: State, targetId: Int = -1): Action {
     gameState.me().mana -= item.cost
     gameState.hand.remove(item)
@@ -272,18 +194,19 @@ class Bot {
             actionPlan.add(Pick(efficientIndexCard))
         } else {
             var bestActionPlan = actionPlan
+            var bestScore = Double.NEGATIVE_INFINITY
             Benchmark.runUntil(TIMEOUT) {
                 val simulation = GameSimulation(state.copy())
-                playSimulation(simulation)
+                simulation.play()
                 simulation.eval()
 
-                if (simulation.actionPlan.score > bestActionPlan.score) {
-                    log("best found")
+                if (simulation.gameState.score > bestScore) {
+                    bestScore = simulation.gameState.score
                     bestActionPlan = simulation.actionPlan
                 }
             }
             actionPlan = bestActionPlan
-            log("best score is ${bestActionPlan.score}")
+            log("best score is $bestScore")
         }
     }
 
@@ -299,29 +222,106 @@ class GameSimulation(
     fun eval() {
 
         if (gameState.opponent().health <= 0) {
-            actionPlan.score = Double.MAX_VALUE
+            gameState.score = Double.MAX_VALUE
             return
         }
 
         // My board
-        actionPlan.score = gameState.board.myCards.sumByDouble { getCardRating(it) } * 2
+        gameState.score = gameState.board.myCards.sumByDouble { getCardRating(it) } * 2
 
         // Opponent's board
-        actionPlan.score -= gameState.board.opponentCards.sumByDouble { getCardRating(it) } * 2
+        gameState.score -= gameState.board.opponentCards.sumByDouble { getCardRating(it) } * 2
 /*
         // My health
-        actionPlan.score += gameState.me().health / 3
+        gameState.score += gameState.me().health / 3
 
         // Opponent's health
-        actionPlan.score -= gameState.opponent().health / 3
+        gameState.score -= gameState.opponent().health / 3
         */
+
+        // Remove points if mana left
+        gameState.score -= gameState.me().mana
 
         // My deck size compared to the enemy's
         //actionPlan.score += gameState.me().deckSize - gameState.opponent().deckSize
 
         // Nb of cards in hand
         //actionPlan.score += (gameState.hand.size)
-        log("score ${actionPlan.score}")
+    }
+
+    fun play() {
+
+        // Summon cards and use items
+        var hasCardsToSummon = gameState.hand.any { it.cost <= gameState.me().mana && !it.analyzed }
+        while (hasCardsToSummon) {
+            val card = gameState.hand.filter { it.cost <= gameState.me().mana && !it.analyzed }.getRandomElement()
+            when (card) {
+                is Creature -> actionPlan.add(summonCreature(card, gameState))
+                is RedItem -> {
+                    if (gameState.board.opponentCards.size > 0) {
+                        actionPlan.add(useItem(card, gameState, gameState.board.opponentCards.getRandomElement().instanceId))
+                    } else {
+                        card.analyzed = true
+                    }
+                }
+                is GreenItem -> {
+                    if (gameState.board.myCards.size > 0) {
+                        actionPlan.add(useItem(card, gameState, gameState.board.myCards.getRandomElement().instanceId))
+                    } else {
+                        card.analyzed = true
+                    }
+                }
+                is BlueItem -> {
+                    val targetId = if (gameState.board.opponentCards.size > 0) gameState.board.opponentCards.getRandomElement().instanceId else -1
+                    actionPlan.add(useItem(card, gameState, targetId))
+                }
+            }
+            hasCardsToSummon = gameState.hand.any { it.cost <= gameState.me().mana && !it.analyzed }
+        }
+
+        // Attack
+        var hasCreatureToPlay = gameState.board.myCards.any { !it.played && it.attack > 0 }
+        while (hasCreatureToPlay) {
+            val creature = gameState.board.myCards.filter { !it.played && it.attack > 0 }.getRandomElement()
+            var target: Creature? = null
+            if (gameState.board.opponentCards.size != 0) {
+                if (gameState.board.opponentCards.hasGuards()) {
+                    target = gameState.board.opponentCards.guards().getRandomElement()
+                } else {
+                    // Fetching random int from 0 to size + 1 to have an index also for enemy hero
+                    // Then Int which is out of bound represents the enemy hero
+                    val randomTargetIndex = Random().nextInt(gameState.board.opponentCards.size + 1)
+                    if (randomTargetIndex <= gameState.board.opponentCards.size) {
+                        target = gameState.board.opponentCards.getRandomElement()
+                    }
+                }
+            }
+            actionPlan.add(attack(creature, target, gameState))
+
+            hasCreatureToPlay = gameState.board.myCards.any { !it.played && it.attack > 0 }
+        }
+
+        // Be attacked
+        var enemyHasCreatureToPlay = gameState.board.opponentCards.any { !it.played && it.attack > 0 }
+        while (enemyHasCreatureToPlay) {
+            val creature = gameState.board.opponentCards.filter { !it.played && it.attack > 0 }.getRandomElement()
+            var target: Creature? = null
+            if (gameState.board.myCards.size != 0) {
+                if (gameState.board.myCards.hasGuards()) {
+                    target = gameState.board.myCards.guards().getRandomElement()
+                } else {
+                    // Fetching random int from 0 to size + 1 to have an index also for enemy hero
+                    // Then Int which is out of bound represents the enemy hero
+                    val randomTargetIndex = Random().nextInt(gameState.board.myCards.size + 1)
+                    if (randomTargetIndex <= gameState.board.myCards.size) {
+                        target = gameState.board.myCards.getRandomElement()
+                    }
+                }
+            }
+            attack(creature, target, gameState)
+
+            enemyHasCreatureToPlay = gameState.board.opponentCards.any { !it.played && it.attack > 0 }
+        }
     }
 }
 
@@ -329,7 +329,8 @@ data class State(
         val board: Board = Board(mutableListOf(), mutableListOf()),
         var players: List<Player> = listOf(),
         var hand: MutableList<Card> = mutableListOf(),
-        var deck: MutableList<Card> = mutableListOf()) {
+        var deck: MutableList<Card> = mutableListOf(),
+        var score: Double = Double.NEGATIVE_INFINITY) {
 
     fun me(): Player {
         return players[0]
@@ -342,9 +343,17 @@ data class State(
     fun isInDraftPhase(): Boolean {
         return players[0].mana <= 0
     }
+
+    fun copy(): State {
+        return State(board.copy(), players.toList(), hand.toMutableList(), deck.toMutableList())
+    }
 }
 
-data class Board(val myCards: MutableList<Creature>, val opponentCards: MutableList<Creature>) {}
+data class Board(val myCards: MutableList<Creature>, val opponentCards: MutableList<Creature>) {
+    fun copy(): Board {
+        return Board(myCards.toMutableList(), opponentCards.toMutableList())
+    }
+}
 
 data class Player(var health: Int, var mana: Int, var deckSize: Int, var runes: Int) {
     fun update(newHealth: Int, newMana: Int, newDeckSize: Int, newRunes: Int) {
@@ -385,7 +394,6 @@ enum class CardType {
 }
 
 class ActionPlan(private var actions: MutableList<Action>) {
-    var score = Double.NEGATIVE_INFINITY
 
     fun execute() {
         if (actions.isEmpty()) {
