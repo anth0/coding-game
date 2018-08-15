@@ -1,6 +1,5 @@
 import Ability.*
-import CardLocation.MyBoard
-import CardLocation.OpponentBoard
+import CardLocation.*
 import CardType.*
 import java.util.*
 
@@ -14,55 +13,6 @@ fun main(args: Array<String>) {
         bot.think()
         bot.write()
     }
-}
-
-fun useRedItem(item: Item, target: Creature?, gameState: State): Action {
-    if (target == null) {
-        gameState.opponent().health += item.opponentHealthChange
-    } else {
-        gameState.opponent().health += item.opponentHealthChange
-        var targetCards = gameState.board.opponentCards
-
-        if (!target.abilities.contains(WARD) && target.defense + item.defense <= 0) {
-            targetCards.remove(target)
-        } else if (target.abilities.contains(WARD) && item.abilities.contains(WARD) && target.defense + item.defense <= 0) {
-            targetCards.remove(target)
-        } else if (!target.abilities.contains(WARD)) {
-            targetCards.first { it.instanceId == target.instanceId }.apply {
-                abilities.removeAll(item.abilities)
-                defense += item.defense
-                attack += item.attack
-            }
-        } else if (target.abilities.contains(WARD)) {
-            targetCards.first { it.instanceId == target.instanceId }.apply {
-                abilities.removeAll(item.abilities)
-                attack += item.attack
-            }
-        }
-    }
-    return useItem(item, gameState, target?.instanceId ?: -1)
-}
-
-fun useGreenItem(item: Item, target: Creature?, gameState: State): Action {
-    if (target == null) {
-        gameState.me().health += item.myHealthChange
-    } else {
-        gameState.me().health += item.myHealthChange
-        var targetCards = gameState.board.myCards
-
-        targetCards.first { it.instanceId == target.instanceId }.apply {
-            attack += item.attack
-            defense += item.defense
-            abilities.addAll(item.abilities)
-        }
-    }
-    return useItem(item, gameState, target?.instanceId ?: -1)
-}
-
-fun useItem(item: Item, gameState: State, targetId: Int = -1): Action {
-    gameState.me().mana -= item.cost
-    gameState.hand.remove(item)
-    return Use(item.instanceId, targetId)
 }
 
 fun attack(attacker: Card, target: Card?, gameState: State): Action {
@@ -304,24 +254,23 @@ class GameSimulation(
                 CREATURE -> Action.summon(gameState, cardIdx)
                 RED_ITEM -> {
                     if (cards.onOpponentBoard().isNotEmpty()) {
-                        Action.use(gameState, cards.onOpponentBoard().getRandomIndex())
-                        useRedItem(card, cards.onOpponentBoard().getRandomElement(), gameState)
+                        Action.use(gameState, cardIdx, cards.onOpponentBoard().getRandomIndex())
                     } else {
-                        card.analyzed = true
+                        cards[cardIdx].analyzed = true
                         return
                     }
                 }
                 GREEN_ITEM -> {
                     if (cards.onMyBoard().isNotEmpty()) {
-                        useGreenItem(card, cards.onMyBoard().getRandomElement(), gameState)
+                        Action.use(gameState, cardIdx, cards.onMyBoard().getRandomIndex())
                     } else {
-                        card.analyzed = true
+                        cards[cardIdx].analyzed = true
                         return
                     }
                 }
                 BLUE_ITEM -> {
-                    val targetId = if (cards.onOpponentBoard().isNotEmpty()) cards.onOpponentBoard().getRandomElement().instanceId else -1
-                    useItem(card, gameState, targetId)
+                    val targetIdx = if (cards.onOpponentBoard().isNotEmpty()) cards.onOpponentBoard().getRandomIndex() else null
+                    Action.use(gameState, cardIdx, targetIdx)
                 }
             }
 
@@ -384,18 +333,63 @@ class State(
     }
 
     fun update(action: Action) {
-        val card = cards[action.cardIdx]
+
         when(action) {
             is Summon -> {
+                val card = cards[action.cardIdx]
+
                 card.canAttack = card.charge
-                card.location = MyBoard
                 me().mana -= card.cost
                 me().health += card.myHealthChange
                 opponent().health += card.opponentHealthChange
                 me().cardsDrawn += card.cardDraw
+                card.location = MyBoard
+            }
+            is Use -> {
+                val item = cards[action.cardIdx]
+                me().mana -= item.cost
+                item.location = DiscardPile
+                when (item.type) {
+                    GREEN_ITEM -> {
+                        if (action.targetIdx == null) throw Exception("Green item should always have a target")
+
+                        me().health += item.myHealthChange
+                        me().cardsDrawn += item.cardDraw
+
+                        val targetCard = cards[action.targetIdx]
+                        targetCard.attack += item.attack
+                        targetCard.defense += item.defense
+                        targetCard.addAbilitiesFrom(item)
+                    }
+                    RED_ITEM, BLUE_ITEM -> {
+                        if (action.targetIdx == null && item.type == RED_ITEM) throw Exception("Red item should always have a target")
+
+                        me().health += item.myHealthChange
+                        me().cardsDrawn += item.cardDraw
+                        opponent().health += item.opponentHealthChange
+                        if (action.targetIdx != null) {
+                            val targetCard = cards[action.targetIdx]
+                            if (!targetCard.ward && targetCard.defense <= item.defense) {
+                                targetCard.location = DiscardPile
+                            } else if (targetCard.ward && item.ward && targetCard.defense <= item.defense) {
+                                targetCard.location = DiscardPile
+                            } else if (targetCard.ward) {
+                                targetCard.removeAbilitiesFrom(item)
+                                targetCard.attack += item.attack
+                                if (item.defense > 0) targetCard.ward = false
+                            } else if (!targetCard.ward) {
+                                targetCard.removeAbilitiesFrom(item)
+                                targetCard.defense += item.defense
+                                targetCard.attack += item.attack
+                            }
+                        }
+                    }
+                    else -> throw Exception("Shouldn't have type ${item.type} for an action of type Use")
+                }
+                item.location = DiscardPile
             }
             is Attack -> {
-
+                //TODO finish this
             }
         }
     }
@@ -456,10 +450,29 @@ class Card(val id: Int,
         }
         return rating
     }
+
+    // TODO: maybe rework how abilities are stored to avoid doing this. bitmask?
+    fun addAbilitiesFrom(card: Card) {
+        if (card.charge) this.charge = true
+        if (card.breakthrough) this.breakthrough = true
+        if (card.drain) this.drain = true
+        if (card.lethal) this.lethal = true
+        if (card.guard) this.guard = true
+        if (card.ward) this.ward= true
+    }
+
+    fun removeAbilitiesFrom(card: Card) {
+        if (card.charge) this.charge = false
+        if (card.breakthrough) this.breakthrough = false
+        if (card.drain) this.drain = false
+        if (card.lethal) this.lethal = false
+        if (card.guard) this.guard = false
+        if (card.ward) this.ward= false
+    }
 }
 
 enum class CardLocation(val id: Int) {
-    OpponentBoard(-1), MyHand(0), MyBoard(1), NotInPlay(2)
+    OpponentBoard(-1), MyHand(0), MyBoard(1), DiscardPile(2)
 }
 
 enum class Ability(val code: String) {
@@ -489,19 +502,17 @@ abstract class Action {
     var cardIdx: Int  = -1
     companion object {
         fun summon(state: State, cardIdx: Int) : Summon {
-            val summon = Summon(state.cards[cardIdx].instanceId)
-            summon.cardIdx = cardIdx
-            return summon
+            return Summon(state.cards[cardIdx].instanceId, cardIdx)
         }
         fun attack(state: State, attackingCardIdx: Int, targetCardIdx: Int? = -1) : Attack {
             val attackerId = state.cards[attackingCardIdx].instanceId
             val targetId = if (targetCardIdx == null) -1 else state.cards[targetCardIdx].instanceId
-            return Attack(attackerId, targetId)
+            return Attack(attackerId, attackingCardIdx, targetId, targetCardIdx)
         }
-        fun use(state: State, itemCardIdx: Int, targetCardIdx: Int? = -1) : Attack {
+        fun use(state: State, itemCardIdx: Int, targetCardIdx: Int?) : Use {
             val itemId = state.cards[itemCardIdx].instanceId
             val targetId = if (targetCardIdx == null) -1 else state.cards[targetCardIdx].instanceId
-            return Attack(itemId, targetId)
+            return Use(itemId, itemCardIdx, targetId, targetCardIdx)
         }
     }
 }
@@ -513,7 +524,10 @@ class Pick(private val cardId: Int) : Action() {
     }
 }
 
-class Summon(private val instanceId: Int) : Action() {
+class Summon(private val instanceId: Int, creatureIdx: Int) : Action() {
+    init {
+        this.cardIdx = creatureIdx
+    }
     override fun toString(): String {
         return "SUMMON $instanceId"
     }
@@ -525,13 +539,19 @@ class Pass : Action() {
     }
 }
 
-class Attack(private val attackerId: Int, private var opponentId: Int = -1) : Action() {
+class Attack(private val attackerId: Int,  itemIdx: Int, private var opponentId: Int = -1, val targetIdx: Int?) : Action() {
+    init {
+        this.cardIdx = itemIdx
+    }
     override fun toString(): String {
         return "ATTACK $attackerId $opponentId"
     }
 }
 
-class Use(private val itemId: Int, private val targetId: Int = -1) : Action() {
+class Use(private val itemId: Int, itemIdx: Int, private val targetId: Int = -1, val targetIdx: Int?) : Action() {
+    init {
+        this.cardIdx = itemIdx
+    }
     override fun toString(): String {
         return "USE $itemId $targetId"
     }
