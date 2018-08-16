@@ -220,11 +220,11 @@ class GameSimulation(
                     // Then Int which is out of bound represents the enemy hero
                     val randomTargetIndex = Random().nextInt(gameState.cards.filter(targetPredicate).size + 1)
                     if (randomTargetIndex < gameState.cards.filter(targetPredicate).size) {
-                        targetCardIdx = randomTargetIndex
+                        targetCardIdx = gameState.cards.getRandomIndexForPredicate(targetPredicate)
                     }
                 }
             }
-            val action = Action.attack(gameState, attackingCreatureIdx, targetCardIdx) //FIXME it seems that we're sending target = 1 sometimes for unknown reasons... (https://www.codingame.com/share-replay/332637608)
+            val action = Action.attack(gameState, attackingCreatureIdx, targetCardIdx)
             gameState.update(action)
             actionPlan.add(action) //FIXME should not happen if I'm not the one attacking (so when the attack methods is called to simulate the opponent's turn)
 
@@ -241,7 +241,7 @@ class GameSimulation(
         }
 
         // My board
-        gameState.score = gameState.cards.onMyBoard().sumByDouble { it.rating() }
+        gameState.score = gameState.cards.onMyBoard().sumByDouble { it.rating() } * 2
 
         // Opponent's board
         gameState.score -= gameState.cards.onOpponentBoard().sumByDouble { it.rating() } * 2
@@ -252,9 +252,8 @@ class GameSimulation(
         // Opponent's health
         gameState.score -= gameState.opponent().health
 
-
         // Remove points if mana left
-        //gameState.score -= gameState.me().mana
+        gameState.score -= gameState.me().mana
 
         // My deck size compared to the enemy's
         //gameState.score += gameState.me().deckSize - gameState.opponent().deckSize
@@ -326,9 +325,9 @@ class State(
                         opponent().health += item.opponentHealthChange
                         if (action.targetIdx != null) {
                             val targetCard = cards[action.targetIdx]
-                            if (!targetCard.ward && targetCard.defense <= item.defense) {
+                            if (!targetCard.ward && targetCard.defense + item.defense <= 0) {
                                 targetCard.location = DiscardPile
-                            } else if (targetCard.ward && item.ward && targetCard.defense <= item.defense) {
+                            } else if (targetCard.ward && item.ward && targetCard.defense + item.defense <= 0) {
                                 targetCard.location = DiscardPile
                             } else if (targetCard.ward) {
                                 targetCard.removeAbilitiesFrom(item)
