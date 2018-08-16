@@ -2,6 +2,8 @@ import CardLocation.*
 import CardType.*
 import java.util.*
 
+const val MAX_CREATURES_ON_BOARD = 6
+const val MAX_CARDS_IN_HAND = 8
 const val TIMEOUT = 95
 
 fun main(args: Array<String>) {
@@ -169,8 +171,9 @@ class GameSimulation(
     private fun summon() {
         val cards = gameState.cards
         var hasCardsToSummon = cards.inMyHand().any { it.cost <= gameState.me().mana && !it.analyzed }
+        var boardNotFull = cards.count { it.location == MyBoard } < MAX_CREATURES_ON_BOARD
 
-        while (hasCardsToSummon) {
+        while (hasCardsToSummon && boardNotFull) {
             val cardIdx = cards.getRandomIndexForPredicate { it.location == MyHand && it.cost <= gameState.me().mana && !it.analyzed }
             val action: Action? = when (cards[cardIdx].type) {
                 CREATURE -> Action.summon(gameState, cardIdx)
@@ -202,6 +205,7 @@ class GameSimulation(
             }
 
             hasCardsToSummon = cards.inMyHand().any { it.cost <= gameState.me().mana && !it.analyzed }
+            boardNotFull = cards.count { it.location == MyBoard } < 6
         }
     }
 
@@ -233,7 +237,7 @@ class GameSimulation(
     }
 
     fun eval() {
-        // draw next turn ? => cf. Player.cardDrawn //TODO update it when we play a card that makes us draw smth
+        // draw next turn ? => cf. Player.cardDrawn //TODO update it when we play a card that makes us draw smth AND put negative score if drawing those cards would make us have more than the MAX_CARDS_IN_HAND!
 
         if (gameState.opponent().health <= 0) {
             gameState.score = Double.MAX_VALUE
