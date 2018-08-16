@@ -161,7 +161,6 @@ class GameSimulation(
         summon()
 
         // Attack
-
         attack({ it.location == MyBoard }, { it.location == OpponentBoard })
 
         // Be attacked
@@ -372,7 +371,7 @@ class State(
     }
 
     private fun applyAttackFor(attackingCard: Card, attackingPlayer: Player, targetCard: Card, targetPlayer: Player) {
-        if (targetCard.ward) {
+        if (targetCard.ward && attackingCard.attack > 0) {
             targetCard.ward = false
         } else {
             if (attackingCard.lethal || attackingCard.attack >= targetCard.defense) {
