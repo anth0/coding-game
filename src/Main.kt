@@ -25,7 +25,7 @@ class Bot {
             state = State()
             firstInit = false
         } else {
-            val deck  = state.deck.toMutableList()
+            val deck = state.deck.toMutableList()
             state = State()
             state.deck = deck
         }
@@ -57,7 +57,7 @@ class Bot {
             var guard = false
 
             for (j in 0 until abilities.length) {
-                when(abilities[j]) {
+                when (abilities[j]) {
                     'C' -> charge = true
                     'G' -> guard = true
                     'B' -> breakthrough = true
@@ -68,7 +68,7 @@ class Bot {
             }
 
             val card = Card(cardNumber, instanceId, location, cardType, cost, attack, defense, breakthrough, lethal, drain, charge, guard, ward, myHealthChange, opponentHealthChange, cardDraw)
-            when(card.location) {
+            when (card.location) {
                 OpponentBoard, MyBoard -> card.canAttack = true
                 else -> card.canAttack = false
             }
@@ -108,7 +108,7 @@ class Bot {
         actionPlan.execute()
     }
 
-    val repartition = mutableListOf(0, 2, 5, 6, 7, 5, 3, 2)
+    private val repartition = mutableListOf(0, 2, 5, 6, 7, 5, 3, 2)
     private fun cardForMostEfficientCurve(cards: MutableList<Card>, deck: MutableList<Card>): Int {
         val needItem = cards.filter { card -> card.type != CREATURE }.size < deck.size / 5
         val firstCard = cards.inMyHand()[0]
@@ -135,7 +135,7 @@ class Bot {
         return 0
     }
 
-    fun getDraftCardRating(card: Card): Double {
+    private fun getDraftCardRating(card: Card): Double {
         val rating: Double = when (card.type) {
             CREATURE, GREEN_ITEM -> card.attack + card.defense + (card.myHealthChange / 2) - (card.opponentHealthChange / 2) + (card.cardDraw * 2) + card.abilitiesRating()
             RED_ITEM -> (-card.attack - card.defense + (card.myHealthChange / 2) - (card.opponentHealthChange / 2) + (card.cardDraw * 2)).toDouble() // remove abilities is very situational
@@ -160,7 +160,7 @@ class GameSimulation(
 
         // Attack
 
-        attack({it.location == MyBoard}, {it.location == OpponentBoard})
+        attack({ it.location == MyBoard }, { it.location == OpponentBoard })
 
         // Be attacked
         /*attack( {it.location == OpponentBoard}, {it.location == MyBoard})*/
@@ -176,7 +176,7 @@ class GameSimulation(
                 CREATURE -> Action.summon(gameState, cardIdx)
                 RED_ITEM -> {
                     if (cards.onOpponentBoard().isNotEmpty()) {
-                        Action.use(gameState, cardIdx, cards.getRandomIndexForPredicate { it.location == OpponentBoard})
+                        Action.use(gameState, cardIdx, cards.getRandomIndexForPredicate { it.location == OpponentBoard })
                     } else {
                         cards[cardIdx].analyzed = true
                         return
@@ -184,14 +184,14 @@ class GameSimulation(
                 }
                 GREEN_ITEM -> {
                     if (cards.onMyBoard().isNotEmpty()) {
-                        Action.use(gameState, cardIdx, cards.getRandomIndexForPredicate { it.location == MyBoard})
+                        Action.use(gameState, cardIdx, cards.getRandomIndexForPredicate { it.location == MyBoard })
                     } else {
                         cards[cardIdx].analyzed = true
                         return
                     }
                 }
                 BLUE_ITEM -> {
-                    val targetIdx = if (cards.onOpponentBoard().isNotEmpty()) cards.getRandomIndexForPredicate { it.location == OpponentBoard} else null
+                    val targetIdx = if (cards.onOpponentBoard().isNotEmpty()) cards.getRandomIndexForPredicate { it.location == OpponentBoard } else null
                     Action.use(gameState, cardIdx, targetIdx)
                 }
             }
@@ -290,7 +290,7 @@ class State(
 
     fun update(action: Action) {
 
-        when(action) {
+        when (action) {
             is Summon -> {
                 val card = cards[action.cardIdx]
 
@@ -358,16 +358,16 @@ class State(
                     val targetCard = cards[action.targetIdx]
 
                     // Update target's board
-                    applyAttackFor(attackingCard, targetCard, opponentPlayer)
+                    applyAttackFor(attackingCard, attackingPlayer, targetCard, opponentPlayer)
 
                     // Update attacker's board
-                    applyAttackFor(targetCard, attackingCard, attackingPlayer)
+                    applyAttackFor(targetCard, opponentPlayer, attackingCard, attackingPlayer)
                 }
             }
         }
     }
 
-    private fun applyAttackFor(attackingCard: Card, targetCard: Card, opponentPlayer: Player) {
+    private fun applyAttackFor(attackingCard: Card, attackingPlayer: Player, targetCard: Card, targetPlayer: Player) {
         if (targetCard.ward) {
             targetCard.ward = false
         } else {
@@ -375,10 +375,14 @@ class State(
                 targetCard.location = DiscardPile
                 val attackRemainder = attackingCard.attack - targetCard.defense
                 if (attackingCard.breakthrough && attackRemainder > 0) { // FIXME does the attacker also take the breakthrough dmg if the target card has it?
-                    opponentPlayer.health -= attackRemainder
+                    targetPlayer.health -= attackRemainder
                 }
             } else {
                 targetCard.defense -= attackingCard.attack
+            }
+
+            if (attackingCard.drain) {
+                attackingPlayer.health += attackingCard.attack
             }
         }
     }
@@ -389,23 +393,24 @@ data class Player(var health: Int,
                   var deckSize: Int,
                   var runes: Int,
                   var cardsDrawn: Int = 0)
+
 class Card(val id: Int,
-            val instanceId: Int,
-            var location: CardLocation,
-            val type: CardType,
-            val cost: Int,
-            var attack: Int,
-            var defense: Int,
-            var breakthrough: Boolean,
-            var lethal: Boolean,
-            var drain: Boolean,
-            var charge: Boolean,
-            var guard: Boolean,
-            var ward: Boolean,
-            val myHealthChange: Int,
-            val opponentHealthChange: Int,
-            val cardDraw: Int,
-            var canAttack: Boolean = true) {
+           val instanceId: Int,
+           var location: CardLocation,
+           val type: CardType,
+           val cost: Int,
+           var attack: Int,
+           var defense: Int,
+           var breakthrough: Boolean,
+           var lethal: Boolean,
+           var drain: Boolean,
+           var charge: Boolean,
+           var guard: Boolean,
+           var ward: Boolean,
+           val myHealthChange: Int,
+           val opponentHealthChange: Int,
+           val cardDraw: Int,
+           var canAttack: Boolean = true) {
     var analyzed = false
 
     override fun toString(): String = instanceId.toString()
@@ -447,7 +452,7 @@ class Card(val id: Int,
         if (card.drain) this.drain = true
         if (card.lethal) this.lethal = true
         if (card.guard) this.guard = true
-        if (card.ward) this.ward= true
+        if (card.ward) this.ward = true
     }
 
     fun removeAbilitiesFrom(card: Card) {
@@ -456,7 +461,7 @@ class Card(val id: Int,
         if (card.drain) this.drain = false
         if (card.lethal) this.lethal = false
         if (card.guard) this.guard = false
-        if (card.ward) this.ward= false
+        if (card.ward) this.ward = false
     }
 }
 
@@ -488,17 +493,20 @@ class ActionPlan(private var actions: MutableList<Action> = mutableListOf()) {
 }
 
 abstract class Action {
-    var cardIdx: Int  = -1
+    var cardIdx: Int = -1
+
     companion object {
-        fun summon(state: State, cardIdx: Int) : Summon {
+        fun summon(state: State, cardIdx: Int): Summon {
             return Summon(state.cards[cardIdx].instanceId, cardIdx)
         }
-        fun attack(state: State, attackingCardIdx: Int, targetCardIdx: Int? = -1) : Attack {
+
+        fun attack(state: State, attackingCardIdx: Int, targetCardIdx: Int? = -1): Attack {
             val attackerId = state.cards[attackingCardIdx].instanceId
             val targetId = if (targetCardIdx == null) -1 else state.cards[targetCardIdx].instanceId
             return Attack(attackerId, attackingCardIdx, targetId, targetCardIdx)
         }
-        fun use(state: State, itemCardIdx: Int, targetCardIdx: Int?) : Use {
+
+        fun use(state: State, itemCardIdx: Int, targetCardIdx: Int?): Use {
             val itemId = state.cards[itemCardIdx].instanceId
             val targetId = if (targetCardIdx == null) -1 else state.cards[targetCardIdx].instanceId
             return Use(itemId, itemCardIdx, targetId, targetCardIdx)
@@ -517,6 +525,7 @@ class Summon(private val instanceId: Int, creatureIdx: Int) : Action() {
     init {
         this.cardIdx = creatureIdx
     }
+
     override fun toString(): String {
         return "SUMMON $instanceId"
     }
@@ -528,10 +537,11 @@ class Pass : Action() {
     }
 }
 
-class Attack(private val attackerId: Int,  itemIdx: Int, private var opponentId: Int = -1, val targetIdx: Int?) : Action() {
+class Attack(private val attackerId: Int, itemIdx: Int, private var opponentId: Int = -1, val targetIdx: Int?) : Action() {
     init {
         this.cardIdx = itemIdx
     }
+
     override fun toString(): String {
         return "ATTACK $attackerId $opponentId"
     }
@@ -541,6 +551,7 @@ class Use(private val itemId: Int, itemIdx: Int, private val targetId: Int = -1,
     init {
         this.cardIdx = itemIdx
     }
+
     override fun toString(): String {
         return "USE $itemId $targetId"
     }
@@ -585,10 +596,11 @@ fun <T : Double> Iterable<T>.indexOfMax(): Int {
 
 fun <E> List<E>.getRandomElement() = this[Random().nextInt(this.size)]
 fun <E> List<E>.getRandomIndex() = Random().nextInt(this.size)
-fun <E : Card> List<Card>.getRandomCardIndexFromMyBoard() : Int {
+fun <E : Card> List<Card>.getRandomCardIndexFromMyBoard(): Int {
     return this.getRandomIndexForPredicate { it.location == MyBoard }
 }
-fun <Card> List<Card>.getRandomIndexForPredicate(predicate: (Card) -> Boolean) : Int {
+
+fun <Card> List<Card>.getRandomIndexForPredicate(predicate: (Card) -> Boolean): Int {
     val indexes = mutableListOf<Int>()
     for ((idx, card) in this.withIndex()) {
         if (predicate(card)) {
@@ -598,7 +610,7 @@ fun <Card> List<Card>.getRandomIndexForPredicate(predicate: (Card) -> Boolean) :
     return indexes[Random().nextInt(indexes.size)]
 }
 
-private fun <E:Card> List<E>.getRandomGuardIndexForPredicate(predicate: (E) -> Boolean): Int {
+private fun <E : Card> List<E>.getRandomGuardIndexForPredicate(predicate: (E) -> Boolean): Int {
     val indexes = mutableListOf<Int>()
     for ((idx, card) in this.withIndex()) {
         if (predicate(card) && card.guard) {
@@ -607,7 +619,8 @@ private fun <E:Card> List<E>.getRandomGuardIndexForPredicate(predicate: (E) -> B
     }
     return indexes[Random().nextInt(indexes.size)]
 }
-private fun <E:Card> List<E>.getRandomPlayableCreatureForPredicate(predicate: (E) -> Boolean): Int {
+
+private fun <E : Card> List<E>.getRandomPlayableCreatureForPredicate(predicate: (E) -> Boolean): Int {
     val indexes = mutableListOf<Int>()
     for ((idx, card) in this.withIndex()) {
         if (predicate(card) && card.canAttack && card.attack > 0) {
