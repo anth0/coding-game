@@ -4,11 +4,32 @@ import java.util.*
 
 const val MAX_CREATURES_ON_BOARD = 6
 const val MAX_CARDS_IN_HAND = 8
-const val TIMEOUT = 95
+//const val TIMEOUT = 95
+const val TIMEOUT = 95 * 1000000
 val RANDOM = Random()
+var myBoardCoeff = 2.0
+var oppCoeff = -2.0
+var myHealthCoeff = 1.0
+var oppHpCoeff = -1.0
+var myMana = 1.0
+var myHand = 0.5
+var counter = 0
+
 
 fun main(args: Array<String>) {
     val bot = Bot()
+
+    if (args.size > 1) {
+        log("Reading coeff from params")
+        myBoardCoeff = args[1].toDouble()
+        oppCoeff = args[2].toDouble()
+        myHealthCoeff = args[3].toDouble()
+        oppHpCoeff = args[4].toDouble()
+        myMana = args[5].toDouble()
+        myHand = args[6].toDouble()
+    }
+
+    log("Used coeff: $myBoardCoeff ; $oppCoeff ; $myHealthCoeff ; $oppHpCoeff ; $myMana ; $myHand")
 
     while (true) {
         bot.read()
@@ -21,7 +42,7 @@ class Bot {
     private val input = Scanner(System.`in`)
     private var firstInit = true
     private lateinit var state: State
-    private lateinit var actionPlan: ActionPlan
+    private var actionPlan: ActionPlan = ActionPlan()
 
     fun read() {
         if (firstInit) {
@@ -94,11 +115,11 @@ class Bot {
 
             state.cards.add(card)
         }
-        log("$inputString")
+        //log(inputString)
     }
 
     fun think() {
-        actionPlan = ActionPlan()
+        actionPlan.clear()
 
         if (state.isInDraftPhase()) {
             //val bestCardIndex = searchMostRatedCard(firstCard, secondCard, thirdCard, deck)
@@ -109,16 +130,23 @@ class Bot {
             var bestActionPlan = actionPlan
             var bestScore = Double.NEGATIVE_INFINITY
 
-            Benchmark.runUntil(TIMEOUT) {
+            val startTime = System.nanoTime()
+            counter = 0
+            while(System.nanoTime() - startTime < TIMEOUT) {
                 val simulation = GameSimulation(state.copy(), ActionPlan())
                 simulation.play()
                 simulation.eval()
 
                 if (simulation.gameState.score > bestScore) {
+                    log("Found new best score of ${simulation.gameState.score} at simulation #$counter. Previous best score was $bestScore")
                     bestScore = simulation.gameState.score
                     bestActionPlan = simulation.actionPlan
+                } else if (counter% 100 == 0){
+                    //log("score for simulation #$counter is ${simulation.gameState.score}")
                 }
+                counter++
             }
+            log("$counter simulations")
             actionPlan = bestActionPlan
             log("best score is $bestScore")
         }
@@ -130,7 +158,7 @@ class Bot {
 
     private val repartition = mutableListOf(0, 2, 5, 6, 7, 5, 3, 2)
     private fun cardForMostEfficientCurve(cards: MutableList<Card>, deck: MutableList<Card>): Int {
-        val needItem = cards.filter { card -> card.type != CREATURE }.size < deck.size / 5
+        val needItem = deck.filter { card -> card.type != CREATURE }.size < deck.size / 5
         val firstCard = cards.inMyHand()[0]
         val secondCard = cards.inMyHand()[1]
         val thirdCard = cards.inMyHand()[2]
@@ -158,17 +186,11 @@ class Bot {
     private fun getDraftCardRating(card: Card): Double {
         val rating: Double = when (card.type) {
             CREATURE, GREEN_ITEM -> card.attack + card.defense + (card.myHealthChange / 2) - (card.opponentHealthChange / 2) + (card.cardDraw * 2) + card.abilitiesRating()
-            RED_ITEM -> (-card.attack - card.defense + (card.myHealthChange / 2) - (card.opponentHealthChange / 2) + (card.cardDraw * 2)).toDouble() // remove abilities is very situational
-            BLUE_ITEM -> -200.0
+            RED_ITEM, BLUE_ITEM -> (-card.attack - card.defense + (card.myHealthChange / 2) - (card.opponentHealthChange / 2) + (card.cardDraw * 2)).toDouble()
         }
         return rating - (card.cost * 2 + 1)
     }
 }
-
-//shufflePlayer0Seed=-4770668948709142815
-//seed=2493166087447067600
-//draftChoicesSeed=3558409501800307699
-//shufflePlayer1Seed=5667960557175409084
 
 class GameSimulation(
         val gameState: State,
@@ -240,7 +262,6 @@ class GameSimulation(
                 val targetCards = gameState.cards.filter(targetPredicate)
                 if (targetCards.hasGuards()) {
                     targetCardIdx = gameState.cards.getRandomGuardIndexForPredicate(targetPredicate)
-                    log("target guard found: ${gameState.cards[targetCardIdx]}")
                 } else {
                     if (RANDOM.nextInt(targetCards.size + 1) != 0) {
                         targetCardIdx = gameState.cards.getRandomIndexForPredicate(targetPredicate)
@@ -312,7 +333,7 @@ class State(
     }
 
     fun copy(): State {
-        val newState = State(cards.toMutableList(), players.copyOf())
+       val newState = State(cards.map { it.copy() }.toMutableList(), players.map { it.copy() }.toTypedArray())
         newState.deck = this.deck // TODO: any need to copy the deck for simulation?
         return newState
     }
@@ -422,7 +443,7 @@ data class Player(var health: Int,
                   var runes: Int,
                   var cardsDrawn: Int = 0)
 
-class Card(val id: Int,
+data class Card(val id: Int,
            val instanceId: Int,
            var location: CardLocation,
            val type: CardType,
@@ -513,6 +534,10 @@ class ActionPlan(private var actions: MutableList<Action> = mutableListOf()) {
             add(Pass())
         }
         println(actions.joinToString(";"))
+    }
+
+    fun clear() {
+        actions.clear()
     }
 
     fun add(action: Action) {
