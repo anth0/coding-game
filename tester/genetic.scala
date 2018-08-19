@@ -20,10 +20,10 @@ val STEP = .25d
 def eval(a: Array[Double], b: Array[Double]): Double = {
   val out = sys.process.Process(Seq("java", "-jar", "tester/cg-brutaltester.jar",
     "-r", "java -Dleague.level=4 -Dverbose.level=0 -jar tester/locam-referee.jar",
-    //"-p1", s"java -jar target/game.jar ${a.mkString(" ")}",
-    //"-p2", s"java -jar target/game.jar ${b.mkString(" ")}",
-    "-p1", s"tester/play.sh ${a.mkString(" ")} ../command.fifo",
-    "-p2", s"tester/play.sh ${b.mkString(" ")} ../command.fifo",
+    "-p1", s"java -jar target/game.jar ${a.mkString(" ")}",
+    "-p2", s"java -jar target/game.jar ${b.mkString(" ")}",
+    //"-p1", s"tester/play.sh ${a.mkString(" ")} ../command.fifo",
+    //"-p2", s"tester/play.sh ${b.mkString(" ")} ../command.fifo",
     "-t", "1", "-n", "5", "-s" //, "-v", "-l", "game/logs"
   )).!!
   val m = SCORE_RE.findFirstMatchIn(out).get
@@ -33,18 +33,18 @@ def eval(a: Array[Double], b: Array[Double]): Double = {
 val SCORE_RE = """(?m)^\| Player 1 \|\s+\|\s*(\d+[\.,]\d+)%\s*\|$""".r
 
 val INIT_STR = """
-	5.75	2.25, -2.0, 1.5, -2.0, 0.75, 1.5
-	5.75	2.25, -1.75, 1.25, -2.0, 0.75, 1.5
-	5.65	2.25, -2.0, 1.25, -2.25, 0.75, 1.75
-	5.65	2.25, -2.0, 1.25, -2.25, 0.75, 2.0
-	5.50	2.25, -2.0, 1.25, -2.0, 0.75, 1.75
-	5.50	2.25, -2.0, 1.0, -1.5, -0.75, 1.5
-	5.50	2.25, -1.75, 1.25, -2.0, 0.75, 1.25
-	5.50	2.25, -2.0, 1.0, -1.75, -0.75, 1.5
-	5.35	2.25, -2.0, 1.25, -2.25, -0.75, 1.75
-	5.35	2.25, -1.75, 1.25, -2.0, 0.75, 1.75
-	5.30	2.25, -1.75, 1.25, -2.0, 0.75, 1.5
-	5.20	2.25, -2.0, 1.25, -2.0, -0.75, 1.5
+	6.50	2.25, -1.75, 1.0, -1.5, -0.75, 1.5
+	6.00	2.25, -1.75, 1.25, -1.75, 0.75, 1.0
+	5.80	2.25, -1.75, 1.0, -1.5, -0.75, 1.25
+	5.80	2.0, -1.75, 1.0, -1.5, -0.75, 1.5
+	5.70	2.25, -2.0, 1.5, -2.0, 0.75, 1.75
+	5.30	2.25, -1.75, 1.0, -1.5, -0.75, 1.5
+	5.30	2.25, -1.75, 1.25, -1.75, 0.75, 1.25
+	5.20	2.25, -2.0, 1.5, -2.25, 0.75, 1.75
+	5.20	2.25, -1.75, 1.0, -1.75, -0.75, 1.5
+	5.10	2.25, -1.75, 1.0, -1.5, -0.75, 1.5
+	5.10	2.5, -2.0, 1.75, -2.25, 0.75, 1.75
+	5.00	2.5, -2.0, 1.5, -2.25, 0.75, 1.75
 """
 val INIT_RE = """^\s*+(?:[\d.]+\s+)?+(\d.++)$""".r
 val INIT_COEFS = INIT_STR.split("""\r?\n""").map(_.trim).filter(!_.isEmpty)
