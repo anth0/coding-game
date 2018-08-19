@@ -18,10 +18,10 @@ val STEP = .25d
 
 // Return success rate of a against b
 def eval(a: Array[Double], b: Array[Double]): Double = {
-  val out = sys.process.Process(Seq("java", "-jar", "game/tester/cg-brutaltester.jar",
-    "-r", "java -Dleague.level=4 -Dverbose.level=0 -jar game/tester/locam-referee.jar",
-    "-p1", s"java -jar game/target/game.jar ${a.mkString(" ")}",
-    "-p2", s"java -jar game/target/game.jar ${b.mkString(" ")}",
+  val out = sys.process.Process(Seq("java", "-jar", "tester/cg-brutaltester.jar",
+    "-r", "java -Dleague.level=4 -Dverbose.level=0 -jar tester/locam-referee.jar",
+    "-p1", s"java -jar target/game.jar ${a.mkString(" ")}",
+    "-p2", s"java -jar target/game.jar ${b.mkString(" ")}",
     "-t", "1", "-n", "5" //, "-v", "-l", "game/logs"
   )).!!
   val m = SCORE_RE.findFirstMatchIn(out).get
