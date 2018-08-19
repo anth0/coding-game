@@ -28,7 +28,7 @@ def eval(a: Array[Double], b: Array[Double]): Double = {
   System.err.println(s"Pitched ${a.mkString(",")} against ${b.mkString(",")} : $rate")
   rate.replace(',', '.').toDouble / 100d
 }
-val SCORE_RE = """(?m)(?:.|\n)+^\| Player 1 \|\s+\|\s*(\d+[\.,]\d+)%\s*\|$(?:.|\n)*""".r
+val SCORE_RE = """(?m)(?:.|[\r\n])+?^\| Player 1 \|\s+\|\s*(\d+[\.,]\d+)%\s*\|$(?:.|[\r\n])*+""".r
 
 val INIT = Array(
    2d, // my board
