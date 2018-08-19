@@ -30,7 +30,7 @@ fun main(args: Array<String>) {
             stdin = FileInputStream(stdinPath)
             stdout = PrintStream(stdoutPath)
             stderr = PrintStream(stderrPath)
-
+            System.err.println("Received command with parameters: $stdinPath ; $stdoutPath ; $stderrPath ; $coefficient")
             executor.execute(Bot(stdin, stdout, stderr, coefficient))
             /*
             thread(start = true) {
