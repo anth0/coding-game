@@ -24,11 +24,11 @@ def eval(a: Array[Double], b: Array[Double]): Double = {
     "-p2", s"java -jar game/target/game.jar ${b.mkString(" ")}",
     "-t", "1", "-n", "5" //, "-v", "-l", "game/logs"
   )).!!
-  val SCORE_RE(rate) = out
-  System.err.println(s"Pitched ${a.mkString(",")} against ${b.mkString(",")} : $rate")
-  rate.replace(',', '.').toDouble / 100d
+  val m = SCORE_RE.findFirstMatchIn(out).get
+  System.err.println(s"Pitched ${a.mkString(",")} against ${b.mkString(",")} : ${m.group(1)}")
+  m.group(1).replace(',', '.').toDouble / 100d
 }
-val SCORE_RE = """(?m)(?:.|[\r\n])+?^\| Player 1 \|\s+\|\s*(\d+[\.,]\d+)%\s*\|$(?:.|[\r\n])*+""".r
+val SCORE_RE = """(?m)^\| Player 1 \|\s+\|\s*(\d+[\.,]\d+)%\s*\|$""".r
 
 val INIT = Array(
    2d, // my board
