@@ -21,12 +21,12 @@ fun main(args: Array<String>) {
 
     if (args.size > 1) {
         log("Reading coeff from params")
-        myBoardCoeff = args[1].toDouble()
-        oppBoardCoeff = args[2].toDouble()
-        myHpCoeff = args[3].toDouble()
-        oppHpCoeff = args[4].toDouble()
-        myManaCoeff = args[5].toDouble()
-        myHandCoeff = args[6].toDouble()
+        myBoardCoeff = args[0].toDouble()
+        oppBoardCoeff = args[1].toDouble()
+        myHpCoeff = args[2].toDouble()
+        oppHpCoeff = args[3].toDouble()
+        myManaCoeff = args[4].toDouble()
+        myHandCoeff = args[5].toDouble()
     }
 
     log("Used coeff: $myBoardCoeff ; $oppBoardCoeff ; $myHpCoeff ; $oppHpCoeff ; $myManaCoeff ; $myHandCoeff")
