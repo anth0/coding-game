@@ -8,11 +8,11 @@ const val MAX_CARDS_IN_HAND = 8
 const val TIMEOUT = 95 * 1000000
 val RANDOM = Random()
 var myBoardCoeff = 2.0
-var oppCoeff = -2.0
-var myHealthCoeff = 1.0
+var oppBoardCoeff = -2.0
+var myHpCoeff = 1.0
 var oppHpCoeff = -1.0
-var myMana = 1.0
-var myHand = 0.5
+var myManaCoeff = 1.0
+var myHandCoeff = 0.5
 var counter = 0
 
 
@@ -22,14 +22,14 @@ fun main(args: Array<String>) {
     if (args.size > 1) {
         log("Reading coeff from params")
         myBoardCoeff = args[1].toDouble()
-        oppCoeff = args[2].toDouble()
-        myHealthCoeff = args[3].toDouble()
+        oppBoardCoeff = args[2].toDouble()
+        myHpCoeff = args[3].toDouble()
         oppHpCoeff = args[4].toDouble()
-        myMana = args[5].toDouble()
-        myHand = args[6].toDouble()
+        myManaCoeff = args[5].toDouble()
+        myHandCoeff = args[6].toDouble()
     }
 
-    log("Used coeff: $myBoardCoeff ; $oppCoeff ; $myHealthCoeff ; $oppHpCoeff ; $myMana ; $myHand")
+    log("Used coeff: $myBoardCoeff ; $oppBoardCoeff ; $myHpCoeff ; $oppHpCoeff ; $myManaCoeff ; $myHandCoeff")
 
     while (true) {
         bot.read()
@@ -291,25 +291,25 @@ class GameSimulation(
         }
 
         // My board
-        gameState.score = gameState.cards.onMyBoard().sumByDouble { it.rating() } * 2
+        gameState.score = gameState.cards.onMyBoard().sumByDouble { it.rating() } * myBoardCoeff
 
         // Opponent's board
-        gameState.score -= gameState.cards.onOpponentBoard().sumByDouble { it.rating() } * 2
+        gameState.score += gameState.cards.onOpponentBoard().sumByDouble { it.rating() } * oppBoardCoeff
 
         // My health
-        gameState.score += gameState.me().health
+        gameState.score += gameState.me().health * myHpCoeff
 
         // Opponent's health
-        gameState.score -= gameState.opponent().health
+        gameState.score += gameState.opponent().health * oppHpCoeff
 
         // Remove points if mana left
-        gameState.score -= gameState.me().mana
+        gameState.score += gameState.me().mana * myManaCoeff
 
         // My deck size compared to the enemy's
         //gameState.score += gameState.me().deckSize - gameState.opponent().deckSize
 
         // Nb of cards in hand
-        gameState.score += (gameState.cards.inMyHand().size) * 0.5
+        gameState.score += (gameState.cards.inMyHand().size) * myHandCoeff
     }
 }
 
