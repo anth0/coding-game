@@ -24,11 +24,11 @@ def eval(a: Array[Double], b: Array[Double]): Double = {
     "-p2", s"java -jar game/target/game.jar ${b.mkString(" ")}",
     "-t", "1", "-n", "5" //, "-v", "-l", "game/logs"
   )).!!
-  val m = SCORE_RE.findFirstMatchIn(out).get
-  System.err.println(s"Pitched ${a.mkString(",")} against ${b.mkString(",")} : ${m.group(1)}")
-  m.group(1).toDouble / 100d
+  val SCORE_RE(rate) = out
+  System.err.println(s"Pitched ${a.mkString(",")} against ${b.mkString(",")} : $rate")
+  rate.replace(',', '.').toDouble / 100d
 }
-val SCORE_RE = """(?m)[.\n]+^\| Player 1 \|\s+\|\s*(\d+.\d+)%\s*\|$[.\n*]""".r
+val SCORE_RE = """(?m)(?:.|\n)+^\| Player 1 \|\s+\|\s*(\d+[\.,]\d+)%\s*\|$(?:.|\n)*""".r
 
 val INIT = Array(
    2d, // my board
@@ -56,21 +56,28 @@ var noOpRounds = 0
 while (noOpRounds < MAX_NOOP_ROUNDS && rounds < MAX_ROUNDS) {
   val scores = Array.fill(population.length)(0d)
   for (List((a, ai), (b, bi)) <- population.zipWithIndex.combinations(2).toList.par) {
-    val s = eval(a, b)
+    var s = eval(a, b)
     scores(ai) += s
     scores(bi) += 1d - s
+    // Also revert p1/p2 for fairness
+    s = eval(b, a)
+    scores(ai) += 1d - s
+    scores(bi) += s
   }
+  // sort by descending scores, score -> individual
+  val sorted = scores.toList.zipWithIndex.sortBy(-_._1).map(t => (t._1, population(t._2)))
   // half survives & procreates
-  val survivors = scores.toList.zipWithIndex
-      .sortBy(_._1).map(_._2).map(population)
-      .take(population.length / 2)
+  val survivors = sorted.map(_._2).take(population.length / 2)
   if (! survivors.zipWithIndex.exists(t => t._1 != population(t._2))) {
     noOpRounds += 1
   } else {
     noOpRounds = 0
   }
   population = survivors ::: survivors.map(procreate)
-  System.out.println("ROUND #" + rounds + " BEST: " + population.head.mkString(", "))
+  System.out.println("ROUND #" + rounds)
+  System.out.println("SCORES \n\t" +
+    sorted.map(t => s"${t._1}\t${t._2.mkString(", ")}").mkString("\n\t"))
+  System.out.println("BEST: " + survivors.head.mkString(", "))
   rounds += 1
 }
 
