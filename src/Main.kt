@@ -1,6 +1,8 @@
 import CardLocation.*
 import CardType.*
+import java.io.*
 import java.util.*
+import java.util.concurrent.Executors
 
 const val MAX_CREATURES_ON_BOARD = 6
 const val MAX_CARDS_IN_HAND = 8
@@ -8,14 +10,47 @@ const val TIMEOUT = 95 * 1000000
 val RANDOM = Random()
 
 fun main(args: Array<String>) {
-    val bot = Bot()
 
-    if (args.size > 1) {
-        log("Reading coeff from params")
-        bot.coefficient = Coefficient(args[0].toDouble(), args[1].toDouble(), args[2].toDouble(), args[3].toDouble(), args[4].toDouble(), args[5].toDouble())
+    var coefficient = Coefficient()
+    var stdin = System.`in`
+    var stdout = System.out
+    var stderr = System.err
+
+    if (args.size == 1 && args[0] == "-") {
+        val executor = Executors.newWorkStealingPool()
+
+        while (true) {
+            val input = Scanner(System.`in`)
+            val stdinPath = input.next()
+            val stdoutPath = input.next()
+            val stderrPath = input.next()
+
+            coefficient = Coefficient(input.nextDouble(), input.nextDouble(), input.nextDouble(), input.nextDouble(), input.nextDouble(), input.nextDouble())
+
+            stdin = FileInputStream(stdinPath)
+            stdout = PrintStream(stdoutPath)
+            stderr = PrintStream(stderrPath)
+
+            executor.execute(Bot(stdin, stdout, stderr, coefficient))
+            /*
+            thread(start = true) {
+                println("running from thread(): ${Thread.currentThread()}")
+                val client = Bot(stdin, stdout, stderr, coefficient)
+                while (true) {
+                    client.read()
+                    client.think()
+                    client.write()
+                }
+            }*/
+        }
+
+    } else if (args.size > 1) {
+        stderr.println("Reading coeff from params")
+        coefficient = Coefficient(args[0].toDouble(), args[1].toDouble(), args[2].toDouble(), args[3].toDouble(), args[4].toDouble(), args[5].toDouble())
     }
-    log("Used coeff: ${bot.coefficient}")
+    stderr.println("Used coeff: $coefficient")
 
+    val bot = Bot(stdin, stdout, stderr, coefficient)
     while (true) {
         bot.read()
         bot.think()
@@ -23,21 +58,29 @@ fun main(args: Array<String>) {
     }
 }
 
-class Bot {
-    private val input = Scanner(System.`in`)
+class Bot(stdin: InputStream, private val stdout: PrintStream, private val stderr: PrintStream, var coefficient: Coefficient) : Runnable {
+    private val input = Scanner(stdin)
     private var firstInit = true
-    private lateinit var state: State
+    private lateinit var gameState: GameState
     private var actionPlan: ActionPlan = ActionPlan()
-    var coefficient: Coefficient = Coefficient()
+
+    override fun run() {
+        stderr.println("running from thread(): ${Thread.currentThread()}")
+        while(true) {
+            read()
+            think()
+            write()
+        }
+    }
 
     fun read() {
         if (firstInit) {
-            state = State()
+            gameState = GameState()
             firstInit = false
         } else {
-            val deck = state.deck.toMutableList()
-            state = State()
-            state.deck = deck
+            val deck = gameState.deck.toMutableList()
+            gameState = GameState()
+            gameState.deck = deck
         }
         var inputString : String  = ""
         val myHealth = input.nextInt()
@@ -48,7 +91,7 @@ class Bot {
         val enemyMana = input.nextInt()
         val enemyDeckSize = input.nextInt()
         val enemyRunes = input.nextInt()
-        state.players = arrayOf(
+        gameState.players = arrayOf(
                 Player(myHealth, myMana, myDeckSize, myRunes),
                 Player(enemyHealth, enemyMana, enemyDeckSize, enemyRunes))
 
@@ -99,7 +142,7 @@ class Bot {
                 else -> card.canAttack = false
             }
 
-            state.cards.add(card)
+            gameState.cards.add(card)
         }
         //log(inputString)
     }
@@ -107,10 +150,10 @@ class Bot {
     fun think() {
         actionPlan.clear()
 
-        if (state.isInDraftPhase()) {
+        if (gameState.isInDraftPhase()) {
             //val bestCardIndex = searchMostRatedCard(firstCard, secondCard, thirdCard, deck)
-            val efficientIndexCard = cardForMostEfficientCurve(state.cards, state.deck)
-            state.deck.add(state.cards[efficientIndexCard])
+            val efficientIndexCard = cardForMostEfficientCurve(gameState.cards, gameState.deck)
+            gameState.deck.add(gameState.cards[efficientIndexCard])
             actionPlan.add(Pick(efficientIndexCard))
         } else {
             var bestActionPlan = actionPlan
@@ -119,7 +162,7 @@ class Bot {
             val startTime = System.nanoTime()
             var counter = 0
             while(System.nanoTime() - startTime < TIMEOUT) {
-                val simulation = GameSimulation(state.copy(), ActionPlan())
+                val simulation = GameSimulation(gameState.copy(), ActionPlan())
                 simulation.play()
                 simulation.eval(coefficient)
 
@@ -139,7 +182,11 @@ class Bot {
     }
 
     fun write() {
-        actionPlan.execute()
+        actionPlan.execute(stdout)
+    }
+
+    fun log(text: String) {
+        stderr.println(text)
     }
 
     private val repartition = mutableListOf(0, 2, 8, 6, 7, 4, 2, 3)
@@ -189,7 +236,7 @@ class Bot {
 }
 
 class GameSimulation(
-        val gameState: State,
+        val gameState: GameState,
         val actionPlan: ActionPlan = ActionPlan()) {
 
     fun play() {
@@ -287,10 +334,10 @@ class GameSimulation(
         }
 
         // My board
-        gameState.score = gameState.cards.onMyBoard().sumByDouble { it.rating() } * coefficient.myBoardCoeff
+        gameState.score = gameState.cards.onMyBoard().sumByDouble { it.boardCreatureRating(true) } * coefficient.myBoardCoeff
 
         // Opponent's board
-        gameState.score += gameState.cards.onOpponentBoard().sumByDouble { it.rating() } * coefficient.oppBoardCoeff
+        gameState.score += gameState.cards.onOpponentBoard().sumByDouble { it.boardCreatureRating(false) } * coefficient.oppBoardCoeff
 
         // My health
         gameState.score += gameState.me().health * coefficient.myHpCoeff
@@ -309,7 +356,7 @@ class GameSimulation(
     }
 }
 
-class State(
+class GameState(
         val cards: MutableList<Card> = mutableListOf(),
         var players: Array<Player> = arrayOf()) {
 
@@ -328,8 +375,8 @@ class State(
         return players[0].mana <= 0
     }
 
-    fun copy(): State {
-       val newState = State(cards.map { it.copy() }.toMutableList(), players.map { it.copy() }.toTypedArray())
+    fun copy(): GameState {
+       val newState = GameState(cards.map { it.copy() }.toMutableList(), players.map { it.copy() }.toTypedArray())
         newState.deck = this.deck // TODO: any need to copy the deck for simulation?
         return newState
     }
@@ -460,11 +507,26 @@ data class Card(val id: Int,
 
     override fun toString(): String = instanceId.toString()
 
-    fun rating(): Double {
-        return when (type) {
-            CREATURE, GREEN_ITEM -> attack + defense + (myHealthChange / 2) - (opponentHealthChange / 2) + (cardDraw * 2) + abilitiesRating()
-            RED_ITEM, BLUE_ITEM -> (-attack - defense + (myHealthChange / 2) - (opponentHealthChange / 2) + (cardDraw * 2)).toDouble() // remove abilities is very situational
+    fun boardCreatureRating(ours: Boolean): Double {
+
+        // attacking score
+        var attackingScore = attack.toDouble()
+        if (lethal) {
+            attackingScore += if (ours) 5 else 10
         }
+        if (breakthrough) attackingScore += (attack * 0.5)
+        if (drain) attackingScore += (attack * 0.5)
+
+        // defensing score
+        var defensingScore = defense.toDouble()
+        if (guard) defensingScore += (defense * 0.5)
+        if (ward) defensingScore += 3
+
+        var result = attackingScore + defensingScore
+
+        if (!guard && !lethal && (defensingScore > 3 * attackingScore)) result /= 3.0 // worthless creature
+
+        return result
     }
 
     fun abilitiesRating(): Double {
@@ -514,12 +576,11 @@ enum class CardType {
 
 class ActionPlan(private var actions: MutableList<Action> = mutableListOf()) {
 
-    fun execute() {
+    fun execute(stdout: PrintStream) {
         if (actions.isEmpty()) {
-            log("No action found in the action plan!")
             add(Pass())
         }
-        println(actions.joinToString(";"))
+        stdout.println(actions.joinToString(";"))
     }
 
     fun clear() {
@@ -536,24 +597,24 @@ abstract class Action {
     var cardIdx: Int = -1
 
     companion object {
-        fun summon(state: State, cardIdx: Int): Summon {
+        fun summon(state: GameState, cardIdx: Int): Summon {
             return Summon(state.cards[cardIdx].instanceId, cardIdx)
         }
 
-        fun attack(state: State, attackingCardIdx: Int, targetCardIdx: Int? = -1): Attack {
+        fun attack(state: GameState, attackingCardIdx: Int, targetCardIdx: Int? = -1): Attack {
             val attackerId = state.cards[attackingCardIdx].instanceId
             val targetId = if (targetCardIdx == null) -1 else state.cards[targetCardIdx].instanceId
             return Attack(attackerId, attackingCardIdx, targetId, targetCardIdx)
         }
 
-        fun use(state: State, itemCardIdx: Int, targetCardIdx: Int?): Use {
+        fun use(state: GameState, itemCardIdx: Int, targetCardIdx: Int?): Use {
             val itemId = state.cards[itemCardIdx].instanceId
             val targetId = if (targetCardIdx == null) -1 else state.cards[targetCardIdx].instanceId
             return Use(itemId, itemCardIdx, targetId, targetCardIdx)
         }
     }
 
-    open fun isUseless(state: State): Boolean {
+    open fun isUseless(state: GameState): Boolean {
         return false
     }
 }
@@ -600,7 +661,7 @@ class Use(private val itemId: Int, itemIdx: Int, private val targetId: Int = -1,
         return "USE $itemId $targetId"
     }
 
-    override fun isUseless(state: State): Boolean {
+    override fun isUseless(state: GameState): Boolean {
         val item = state.cards[cardIdx]
 
         if (targetIdx == null) return false
@@ -643,27 +704,6 @@ data class Coefficient(val myBoardCoeff: Double = 2.0,
                   val oppHpCoeff: Double = -1.0,
                   val myManaCoeff: Double = -1.0,
                   val myHandCoeff: Double = 0.25)
-
-class Benchmark {
-    companion object {
-        fun logTime(text: String, block: () -> Unit) {
-            val startTime = System.currentTimeMillis()
-            block.invoke()
-            val duration = System.currentTimeMillis() - startTime
-            System.err.println("$text -> $duration ms")
-        }
-
-        fun runUntil(timeout: Int, block: () -> Unit) {
-            val startTime = System.currentTimeMillis()
-            var iterations = 0
-            while (System.currentTimeMillis() - startTime < timeout) {
-                block.invoke()
-                iterations++
-            }
-            log("$iterations simulations")
-        }
-    }
-}
 
 /*****************************************************************************************************
  ******************************************   UTILS **************************************************
@@ -719,7 +759,3 @@ fun <T : Card> List<T>.guards(): List<T> = this.filter { it.guard }
 fun <T : Card> List<T>.inMyHand(): List<T> = this.filter { it.location == MyHand }
 fun <T : Card> List<T>.onMyBoard(): List<T> = this.filter { it.location == MyBoard }
 fun <T : Card> List<T>.onOpponentBoard(): List<T> = this.filter { it.location == OpponentBoard }
-
-fun log(text: String) {
-    System.err.println(text)
-}
