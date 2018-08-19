@@ -30,14 +30,33 @@ def eval(a: Array[Double], b: Array[Double]): Double = {
 }
 val SCORE_RE = """(?m)^\| Player 1 \|\s+\|\s*(\d+[\.,]\d+)%\s*\|$""".r
 
+val INIT_STR = """
+	12.2	2.25, -2.0, 1.25, -1.5, -1.0, 1.5
+	12.2	2.25, -2.0, 1.25, -1.5, 0.75, 1.5
+	11.80	2.25, -2.0, 1.75, -1.25, 1.0, 0.75
+	11.4	2.0, -2.0, 1.25, -1.5, 1.0, 1.5
+	11.00	2.25, -2.0, 1.5, -1.5, 1.0, 1.5
+	11.00	2.0, -2.0, 1.25, -1.5, 0.75, 1.5
+	10.79	2.25, -2.0, 1.25, -1.25, 0.75, 1.75
+	10.60	2.25, -1.75, 1.25, -1.5, 1.0, 1.75
+	10.6	2.0, -2.0, 1.25, -1.5, 0.75, 1.5
+	10.39	2.0, -1.75, 1.25, -1.5, 1.0, 1.75
+	10.0	2.25, -2.0, 1.75, -1.5, 1.0, 0.75
+	9.999	2.25, -2.0, 1.25, -1.5, 0.75, 1.75
+"""
+val INIT_RE = """^\s*+(?:[\d.]+\s+)?+(\d.++)$""".r
+val INIT_COEFS = INIT_STR.split("""\r?\n""").map(_.trim).filter(!_.isEmpty)
+  .map({ line =>
+    val INIT_RE(coefs) = line
+    coefs.split(", ").map(_.toDouble)
+  }).toList
+
 val INIT = Array(
    2d, // my board
   -2d, // opponent's board
    1d, // my health
   -1d, // opponent's health
-   1d, // my mana
-// 0d, // my deck
-// 0d, // opponent's health
+  -1d, // my mana
    1d  // my hand
 )
 val RANDOM = new scala.util.Random
@@ -48,7 +67,10 @@ def procreate(parent: Array[Double]): Array[Double] = {
   child
 }
 
-var population = INIT.clone() +: (1 until POPULATION).map(_ => procreate(INIT)).toList
+var population: List[Array[Double]] = INIT_COEFS match {
+  case Nil => INIT.clone() +: (1 until POPULATION).map(_ => procreate(INIT)).toList
+  case l   => l
+}
 
 var rounds = 0
 var noOpRounds = 0
@@ -76,8 +98,9 @@ while (noOpRounds < MAX_NOOP_ROUNDS && rounds < MAX_ROUNDS) {
   population = survivors ::: survivors.map(procreate)
   System.out.println("ROUND #" + rounds)
   System.out.println("SCORES \n\t" +
-    sorted.map(t => s"${t._1}\t${t._2.mkString(", ")}").mkString("\n\t"))
+    sorted.map(t => s"${"%.2f".format(t._1)}\t${t._2.mkString(", ")}").mkString("\n\t"))
   System.out.println("BEST: " + survivors.head.mkString(", "))
   rounds += 1
 }
+
 
