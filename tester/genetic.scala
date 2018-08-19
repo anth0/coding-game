@@ -20,9 +20,11 @@ val STEP = .25d
 def eval(a: Array[Double], b: Array[Double]): Double = {
   val out = sys.process.Process(Seq("java", "-jar", "tester/cg-brutaltester.jar",
     "-r", "java -Dleague.level=4 -Dverbose.level=0 -jar tester/locam-referee.jar",
-    "-p1", s"java -jar target/game.jar ${a.mkString(" ")}",
-    "-p2", s"java -jar target/game.jar ${b.mkString(" ")}",
-    "-t", "1", "-n", "10", "-s" //, "-v", "-l", "game/logs"
+    //"-p1", s"java -jar target/game.jar ${a.mkString(" ")}",
+    //"-p2", s"java -jar target/game.jar ${b.mkString(" ")}",
+    "-p1", s"tester/play.sh ${a.mkString(" ")} ../command.fifo",
+    "-p2", s"tester/play.sh ${b.mkString(" ")} ../command.fifo",
+    "-t", "1", "-n", "5", "-s" //, "-v", "-l", "game/logs"
   )).!!
   val m = SCORE_RE.findFirstMatchIn(out).get
   System.err.println(s"Pitched ${a.mkString(",")} against ${b.mkString(",")} : ${m.group(1)}")
