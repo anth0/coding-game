@@ -22,7 +22,7 @@ def eval(a: Array[Double], b: Array[Double]): Double = {
     "-r", "java -Dleague.level=4 -Dverbose.level=0 -jar tester/locam-referee.jar",
     "-p1", s"java -jar target/game.jar ${a.mkString(" ")}",
     "-p2", s"java -jar target/game.jar ${b.mkString(" ")}",
-    "-t", "1", "-n", "5" //, "-v", "-l", "game/logs"
+    "-t", "1", "-n", "10", "-s" //, "-v", "-l", "game/logs"
   )).!!
   val m = SCORE_RE.findFirstMatchIn(out).get
   System.err.println(s"Pitched ${a.mkString(",")} against ${b.mkString(",")} : ${m.group(1)}")
@@ -31,18 +31,18 @@ def eval(a: Array[Double], b: Array[Double]): Double = {
 val SCORE_RE = """(?m)^\| Player 1 \|\s+\|\s*(\d+[\.,]\d+)%\s*\|$""".r
 
 val INIT_STR = """
-	12.80	2.25, -2.0, 1.25, -2.0, 0.75, 1.75
-	11.80	2.25, -2.0, 1.25, -2.0, -0.75, 1.5
-	11.80	2.25, -2.0, 1.25, -2.25, -0.75, 1.75
-	11.40	2.25, -1.75, 1.25, -2.0, 0.75, 1.5
-	11.20	2.25, -2.0, 1.25, -2.25, 0.75, 2.0
-	11.20	2.25, -2.0, 1.0, -1.5, -0.75, 1.5
-	11.00	2.25, -1.75, 1.25, -2.0, 0.75, 1.25
-	10.60	2.25, -1.75, 1.25, -2.0, 0.75, 1.5
-	10.60	2.25, -2.0, 1.0, -1.75, -0.75, 1.5
-	10.60	2.25, -2.0, 1.5, -2.0, 0.75, 1.5
-	10.40	2.25, -2.0, 1.25, -2.25, 0.75, 1.75
-	8.60	2.25, -1.75, 1.25, -2.0, 0.75, 1.75
+	5.75	2.25, -2.0, 1.5, -2.0, 0.75, 1.5
+	5.75	2.25, -1.75, 1.25, -2.0, 0.75, 1.5
+	5.65	2.25, -2.0, 1.25, -2.25, 0.75, 1.75
+	5.65	2.25, -2.0, 1.25, -2.25, 0.75, 2.0
+	5.50	2.25, -2.0, 1.25, -2.0, 0.75, 1.75
+	5.50	2.25, -2.0, 1.0, -1.5, -0.75, 1.5
+	5.50	2.25, -1.75, 1.25, -2.0, 0.75, 1.25
+	5.50	2.25, -2.0, 1.0, -1.75, -0.75, 1.5
+	5.35	2.25, -2.0, 1.25, -2.25, -0.75, 1.75
+	5.35	2.25, -1.75, 1.25, -2.0, 0.75, 1.75
+	5.30	2.25, -1.75, 1.25, -2.0, 0.75, 1.5
+	5.20	2.25, -2.0, 1.25, -2.0, -0.75, 1.5
 """
 val INIT_RE = """^\s*+(?:[\d.]+\s+)?+(\d.++)$""".r
 val INIT_COEFS = INIT_STR.split("""\r?\n""").map(_.trim).filter(!_.isEmpty)
@@ -81,10 +81,6 @@ while (noOpRounds < MAX_NOOP_ROUNDS && rounds < MAX_ROUNDS) {
     var s = eval(a, b)
     scores(ai) += s
     scores(bi) += 1d - s
-    // Also revert p1/p2 for fairness
-    s = eval(b, a)
-    scores(ai) += 1d - s
-    scores(bi) += s
   }
   // sort by descending scores, score -> individual
   val sorted = scores.toList.zipWithIndex.sortBy(-_._1).map(t => (t._1, population(t._2)))

@@ -22,14 +22,21 @@ fun main(args: Array<String>) {
         while (true) {
             val input = Scanner(System.`in`)
             val stdinPath = input.next()
+            System.err.println("in: $stdinPath")
             val stdoutPath = input.next()
+            System.err.println("out: $stdoutPath")
             val stderrPath = input.next()
+            System.err.println("err: $stderrPath")
 
             coefficient = Coefficient(input.nextDouble(), input.nextDouble(), input.nextDouble(), input.nextDouble(), input.nextDouble(), input.nextDouble())
+            System.err.println("coefs: $coefficient")
 
             stdin = FileInputStream(stdinPath)
+            System.err.println("stdin created")
             stdout = PrintStream(stdoutPath)
+            System.err.println("stdout created")
             stderr = PrintStream(stderrPath)
+            System.err.println("stderr created")
             System.err.println("Received command with parameters: $stdinPath ; $stdoutPath ; $stderrPath ; $coefficient")
             executor.execute(Bot(stdin, stdout, stderr, coefficient))
             /*
