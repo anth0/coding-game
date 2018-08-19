@@ -4,32 +4,17 @@ import java.util.*
 
 const val MAX_CREATURES_ON_BOARD = 6
 const val MAX_CARDS_IN_HAND = 8
-//const val TIMEOUT = 95
 const val TIMEOUT = 95 * 1000000
 val RANDOM = Random()
-var myBoardCoeff = 2.0
-var oppBoardCoeff = -2.0
-var myHpCoeff = 1.0
-var oppHpCoeff = -1.0
-var myManaCoeff = 1.0
-var myHandCoeff = 0.5
-var counter = 0
-
 
 fun main(args: Array<String>) {
     val bot = Bot()
 
     if (args.size > 1) {
         log("Reading coeff from params")
-        myBoardCoeff = args[0].toDouble()
-        oppBoardCoeff = args[1].toDouble()
-        myHpCoeff = args[2].toDouble()
-        oppHpCoeff = args[3].toDouble()
-        myManaCoeff = args[4].toDouble()
-        myHandCoeff = args[5].toDouble()
+        bot.coefficient = Coefficient(args[0].toDouble(), args[1].toDouble(), args[2].toDouble(), args[3].toDouble(), args[4].toDouble(), args[5].toDouble())
     }
-
-    log("Used coeff: $myBoardCoeff ; $oppBoardCoeff ; $myHpCoeff ; $oppHpCoeff ; $myManaCoeff ; $myHandCoeff")
+    log("Used coeff: ${bot.coefficient}")
 
     while (true) {
         bot.read()
@@ -43,6 +28,7 @@ class Bot {
     private var firstInit = true
     private lateinit var state: State
     private var actionPlan: ActionPlan = ActionPlan()
+    var coefficient: Coefficient = Coefficient()
 
     fun read() {
         if (firstInit) {
@@ -53,7 +39,7 @@ class Bot {
             state = State()
             state.deck = deck
         }
-        var inputString : String  = ""//TODO log all input
+        var inputString : String  = ""
         val myHealth = input.nextInt()
         val myMana = input.nextInt()
         val myDeckSize = input.nextInt()
@@ -131,11 +117,11 @@ class Bot {
             var bestScore = Double.NEGATIVE_INFINITY
 
             val startTime = System.nanoTime()
-            counter = 0
+            var counter = 0
             while(System.nanoTime() - startTime < TIMEOUT) {
                 val simulation = GameSimulation(state.copy(), ActionPlan())
                 simulation.play()
-                simulation.eval()
+                simulation.eval(coefficient)
 
                 if (simulation.gameState.score > bestScore) {
                     log("Found new best score of ${simulation.gameState.score} at simulation #$counter. Previous best score was $bestScore")
@@ -156,7 +142,7 @@ class Bot {
         actionPlan.execute()
     }
 
-    private val repartition = mutableListOf(0, 2, 5, 6, 7, 5, 3, 2)
+    private val repartition = mutableListOf(0, 2, 8, 6, 7, 4, 2, 3)
     private fun cardForMostEfficientCurve(cards: MutableList<Card>, deck: MutableList<Card>): Int {
         val needItem = deck.filter { card -> card.type != CREATURE }.size < deck.size / 5
         val firstCard = cards.inMyHand()[0]
@@ -184,8 +170,18 @@ class Bot {
     }
 
     private fun getDraftCardRating(card: Card): Double {
+
+        var abilitiesRating = 0.0
+
+        if (card.breakthrough) abilitiesRating += 1
+        if (card.charge) abilitiesRating += 2
+        if (card.drain) abilitiesRating += 0.5 * card.attack
+        if (card.guard) abilitiesRating += 1
+        if (card.lethal) abilitiesRating += 11
+        if (card.ward) abilitiesRating += card.attack
+
         val rating: Double = when (card.type) {
-            CREATURE, GREEN_ITEM -> card.attack + card.defense + (card.myHealthChange / 2) - (card.opponentHealthChange / 2) + (card.cardDraw * 2) + card.abilitiesRating()
+            CREATURE, GREEN_ITEM -> card.attack + card.defense + (card.myHealthChange / 2) - (card.opponentHealthChange / 2) + (card.cardDraw * 2) + abilitiesRating
             RED_ITEM, BLUE_ITEM -> (-card.attack - card.defense + (card.myHealthChange / 2) - (card.opponentHealthChange / 2) + (card.cardDraw * 2)).toDouble()
         }
         return rating - (card.cost * 2 + 1)
@@ -280,7 +276,7 @@ class GameSimulation(
         }
     }
 
-    fun eval() {
+    fun eval(coefficient: Coefficient) {
         // draw next turn ? => cf. Player.cardDrawn //TODO update it when we play a card that makes us draw smth AND put negative score if drawing those cards would make us have more than the MAX_CARDS_IN_HAND!
 
         if (gameState.opponent().health <= 0) {
@@ -291,25 +287,25 @@ class GameSimulation(
         }
 
         // My board
-        gameState.score = gameState.cards.onMyBoard().sumByDouble { it.rating() } * myBoardCoeff
+        gameState.score = gameState.cards.onMyBoard().sumByDouble { it.rating() } * coefficient.myBoardCoeff
 
         // Opponent's board
-        gameState.score += gameState.cards.onOpponentBoard().sumByDouble { it.rating() } * oppBoardCoeff
+        gameState.score += gameState.cards.onOpponentBoard().sumByDouble { it.rating() } * coefficient.oppBoardCoeff
 
         // My health
-        gameState.score += gameState.me().health * myHpCoeff
+        gameState.score += gameState.me().health * coefficient.myHpCoeff
 
         // Opponent's health
-        gameState.score += gameState.opponent().health * oppHpCoeff
+        gameState.score += gameState.opponent().health * coefficient.oppHpCoeff
 
         // Remove points if mana left
-        gameState.score += gameState.me().mana * myManaCoeff
+        gameState.score += gameState.me().mana * coefficient.myManaCoeff
 
         // My deck size compared to the enemy's
         //gameState.score += gameState.me().deckSize - gameState.opponent().deckSize
 
         // Nb of cards in hand
-        gameState.score += (gameState.cards.inMyHand().size) * myHandCoeff
+        gameState.score += (gameState.cards.inMyHand().size) * coefficient.myHandCoeff
     }
 }
 
@@ -473,24 +469,14 @@ data class Card(val id: Int,
 
     fun abilitiesRating(): Double {
         var rating = 0.0
-        if (breakthrough) {
-            rating += 1
-        }
-        if (charge) {
-            rating += 2
-        }
-        if (drain) {
-            rating += 0.5 * attack
-        }
-        if (guard) {
-            rating += 1
-        }
-        if (lethal) {
-            rating += 3
-        }
-        if (ward) {
-            rating += attack
-        }
+
+        if (breakthrough) rating += 1
+        if (charge) rating += 2
+        if (drain) rating += 0.5 * attack
+        if (guard) rating += 1
+        if (lethal) rating += 4
+        if (ward) rating += attack
+
         return rating
     }
 
@@ -650,6 +636,13 @@ class Use(private val itemId: Int, itemIdx: Int, private val targetId: Int = -1,
         return false
     }
 }
+
+data class Coefficient(val myBoardCoeff: Double = 2.0,
+                  val oppBoardCoeff: Double = -2.25,
+                  val myHpCoeff: Double = 1.25,
+                  val oppHpCoeff: Double = -1.0,
+                  val myManaCoeff: Double = -1.0,
+                  val myHandCoeff: Double = 0.25)
 
 class Benchmark {
     companion object {

@@ -11,9 +11,9 @@
 //   val myHand: Double
 // )
 
-val MAX_ROUNDS = 10
+val MAX_ROUNDS = 100
 val MAX_NOOP_ROUNDS = 5
-val POPULATION = 10
+val POPULATION = 12
 val STEP = .25d
 
 // Return success rate of a against b
