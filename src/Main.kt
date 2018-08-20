@@ -467,6 +467,28 @@ data class Card(val id: Int,
         }
     }
 
+    fun boardCreatureRating(ours: Boolean): Double {
+
+        // attacking score
+        var attackingScore = attack.toDouble()
+        if (lethal) {
+            attackingScore += if (ours) 5 else 10
+        }
+        if (breakthrough) attackingScore += (attack * 0.5)
+        if (drain) attackingScore += (attack * 0.5)
+
+        // defensing score
+        var defensingScore = defense.toDouble()
+        if (guard) defensingScore += (defense * 0.5)
+        if (ward) defensingScore += 3
+
+        var result = attackingScore + defensingScore
+
+        if (!guard && !lethal && (defensingScore > 3 * attackingScore)) result /= 3.0 // worthless creature
+
+        return result
+    }
+
     fun abilitiesRating(): Double {
         var rating = 0.0
 
