@@ -203,14 +203,14 @@ class GameSimulation(
             if (RANDOM.nextInt(2) == 0) {
                 if (hasCardsToSummon && boardNotFull) {
                     summon()
+                    hasCardsToSummon = cards.inMyHand().any { it.cost <= gameState.me().mana && !it.analyzed }
+                    boardNotFull = cards.count { it.location == MyBoard } < MAX_CREATURES_ON_BOARD
                 }
-                hasCardsToSummon = cards.inMyHand().any { it.cost <= gameState.me().mana && !it.analyzed }
-                boardNotFull = cards.count { it.location == MyBoard } < MAX_CREATURES_ON_BOARD
             } else {
                 if (attackerHasCreatureToPlay) {
                     attack({ it.location == MyBoard }, { it.location == OpponentBoard }, false)
+                    attackerHasCreatureToPlay = gameState.cards.filter{ it.location == MyBoard }.any { it.canAttack && it.attack > 0 }
                 }
-                attackerHasCreatureToPlay = gameState.cards.filter{ it.location == MyBoard }.any { it.canAttack && it.attack > 0 }
             }
         }
     }
@@ -657,12 +657,12 @@ class Use(private val itemId: Int, itemIdx: Int, private val targetId: Int = -1,
     }
 }
 
-data class Coefficient(val myBoardCoeff: Double = 2.25,
-                       val oppBoardCoeff: Double = -1.75,
-                       val myHpCoeff: Double = 1.0,
-                       val oppHpCoeff: Double = -1.25,
-                       val myManaCoeff: Double = -0.5,
-                       val myHandCoeff: Double = 1.25)
+data class Coefficient(val myBoardCoeff: Double = 2.0,
+                       val oppBoardCoeff: Double = -2.25,
+                       val myHpCoeff: Double = 1.25,
+                       val oppHpCoeff: Double = -1.0,
+                       val myManaCoeff: Double = -1.0,
+                       val myHandCoeff: Double = 0.25)
 
 /*****************************************************************************************************
  ******************************************   UTILS **************************************************
