@@ -193,86 +193,84 @@ class GameSimulation(
         val actionPlan: ActionPlan = ActionPlan()) {
 
     fun play() {
-        // Summon cards and use items
-        summon()
+        val cards = gameState.cards
+        var hasCardsToSummon = cards.inMyHand().any { it.cost <= gameState.me().mana && !it.analyzed }
+        var boardNotFull = cards.count { it.location == MyBoard } < MAX_CREATURES_ON_BOARD
+        var attackerHasCreatureToPlay = gameState.cards.filter{ it.location == MyBoard }.any { it.canAttack && it.attack > 0 }
 
-        // Attack
-        attack({ it.location == MyBoard }, { it.location == OpponentBoard }, false)
-
-        // Be attacked
-        //attack({it.location == OpponentBoard}, {it.location == MyBoard}, true)
+        while((hasCardsToSummon && boardNotFull) || attackerHasCreatureToPlay) {
+            // Randomly summon/use or attack
+            if (RANDOM.nextInt(2) == 0) {
+                if (hasCardsToSummon && boardNotFull) {
+                    summon()
+                }
+                hasCardsToSummon = cards.inMyHand().any { it.cost <= gameState.me().mana && !it.analyzed }
+                boardNotFull = cards.count { it.location == MyBoard } < MAX_CREATURES_ON_BOARD
+            } else {
+                if (attackerHasCreatureToPlay) {
+                    attack({ it.location == MyBoard }, { it.location == OpponentBoard }, false)
+                }
+                attackerHasCreatureToPlay = gameState.cards.filter{ it.location == MyBoard }.any { it.canAttack && it.attack > 0 }
+            }
+        }
     }
 
     private fun summon() {
         val cards = gameState.cards
-        var hasCardsToSummon = cards.inMyHand().any { it.cost <= gameState.me().mana && !it.analyzed }
-        var boardNotFull = cards.count { it.location == MyBoard } < MAX_CREATURES_ON_BOARD
-
-        while (hasCardsToSummon && boardNotFull) {
-            val cardIdx = cards.getRandomIndexForPredicate { it.location == MyHand && it.cost <= gameState.me().mana && !it.analyzed }
-            val action: Action? = when (cards[cardIdx].type) {
-                CREATURE -> Action.summon(gameState, cardIdx)
-                RED_ITEM -> {
-                    if (cards.onOpponentBoard().isNotEmpty()) {
-                        Action.use(gameState, cardIdx, cards.getRandomIndexForPredicate { it.location == OpponentBoard })
-                    } else {
-                        cards[cardIdx].analyzed = true
-                        return
-                    }
-                }
-                GREEN_ITEM -> {
-                    if (cards.onMyBoard().isNotEmpty()) {
-                        Action.use(gameState, cardIdx, cards.getRandomIndexForPredicate { it.location == MyBoard })
-                    } else {
-                        cards[cardIdx].analyzed = true
-                        return
-                    }
-                }
-                BLUE_ITEM -> {
-                    val targetIdx = if (cards.onOpponentBoard().isNotEmpty()) cards.getRandomIndexForPredicate { it.location == OpponentBoard } else null //FIXME Healing potion ?
-                    Action.use(gameState, cardIdx, targetIdx)
-                }
-            }
-
-            if (action != null ) {
-                if (action.isUseless(gameState)) {
-                    cards[cardIdx].analyzed = true
+        val cardIdx = cards.getRandomIndexForPredicate { it.location == MyHand && it.cost <= gameState.me().mana && !it.analyzed }
+        val action: Action? = when (cards[cardIdx].type) {
+            CREATURE -> Action.summon(gameState, cardIdx)
+            RED_ITEM -> {
+                if (cards.onOpponentBoard().isNotEmpty()) {
+                    Action.use(gameState, cardIdx, cards.getRandomIndexForPredicate { it.location == OpponentBoard })
                 } else {
-                    gameState.update(action)
-                    actionPlan.add(action)
+                    cards[cardIdx].analyzed = true
+                    return
                 }
             }
+            GREEN_ITEM -> {
+                if (cards.onMyBoard().isNotEmpty()) {
+                    Action.use(gameState, cardIdx, cards.getRandomIndexForPredicate { it.location == MyBoard })
+                } else {
+                    cards[cardIdx].analyzed = true
+                    return
+                }
+            }
+            BLUE_ITEM -> {
+                val targetIdx = if (cards.onOpponentBoard().isNotEmpty()) cards.getRandomIndexForPredicate { it.location == OpponentBoard } else null //FIXME Healing potion ?
+                Action.use(gameState, cardIdx, targetIdx)
+            }
+        }
 
-            hasCardsToSummon = cards.inMyHand().any { it.cost <= gameState.me().mana && !it.analyzed }
-            boardNotFull = cards.count { it.location == MyBoard } < 6
+        if (action != null ) {
+            if (action.isUseless(gameState)) {
+                cards[cardIdx].analyzed = true
+            } else {
+                gameState.update(action)
+                actionPlan.add(action)
+            }
         }
     }
 
     private fun attack(attackerPredicate: (Card) -> Boolean, targetPredicate: (Card) -> Boolean, isCounterAttack: Boolean) {
-        var attackerHasCreatureToPlay = gameState.cards.filter(attackerPredicate).any { it.canAttack && it.attack > 0 }
-
-        while (attackerHasCreatureToPlay) {
-            val attackingCreatureIdx = gameState.cards.getRandomPlayableCreatureForPredicate(attackerPredicate)
-            var targetCardIdx: Int? = null
-            if (gameState.cards.any(targetPredicate)) {
-                val targetCards = gameState.cards.filter(targetPredicate)
-                if (targetCards.hasGuards()) {
-                    targetCardIdx = gameState.cards.getRandomGuardIndexForPredicate(targetPredicate)
+        val attackingCreatureIdx = gameState.cards.getRandomPlayableCreatureForPredicate(attackerPredicate)
+        var targetCardIdx: Int? = null
+        if (gameState.cards.any(targetPredicate)) {
+            val targetCards = gameState.cards.filter(targetPredicate)
+            if (targetCards.hasGuards()) {
+                targetCardIdx = gameState.cards.getRandomGuardIndexForPredicate(targetPredicate)
+            } else {
+                if (RANDOM.nextInt(targetCards.size + 1) != 0) {
+                    targetCardIdx = gameState.cards.getRandomIndexForPredicate(targetPredicate)
                 } else {
-                    if (RANDOM.nextInt(targetCards.size + 1) != 0) {
-                        targetCardIdx = gameState.cards.getRandomIndexForPredicate(targetPredicate)
-                    } else {
-                        // Target hero
-                    }
+                    // Target hero
                 }
             }
-            val action = Action.attack(gameState, attackingCreatureIdx, targetCardIdx)
-            gameState.update(action)
-            if (!isCounterAttack) {
-                actionPlan.add(action)
-            }
-
-            attackerHasCreatureToPlay = gameState.cards.filter(attackerPredicate).any { it.canAttack && it.attack > 0 }
+        }
+        val action = Action.attack(gameState, attackingCreatureIdx, targetCardIdx)
+        gameState.update(action)
+        if (!isCounterAttack) {
+            actionPlan.add(action)
         }
     }
 
@@ -659,55 +657,16 @@ class Use(private val itemId: Int, itemIdx: Int, private val targetId: Int = -1,
     }
 }
 
-data class Coefficient(val myBoardCoeff: Double = 2.0,
-                       val oppBoardCoeff: Double = -2.25,
-                       val myHpCoeff: Double = 1.25,
-                       val oppHpCoeff: Double = -1.0,
-                       val myManaCoeff: Double = -1.0,
-                       val myHandCoeff: Double = 0.25)
-
-class Benchmark {
-    companion object {
-        fun logTime(text: String, block: () -> Unit) {
-            val startTime = System.currentTimeMillis()
-            block.invoke()
-            val duration = System.currentTimeMillis() - startTime
-            System.err.println("$text -> $duration ms")
-        }
-
-        fun runUntil(timeout: Int, block: () -> Unit) {
-            val startTime = System.currentTimeMillis()
-            var iterations = 0
-            while (System.currentTimeMillis() - startTime < timeout) {
-                block.invoke()
-                iterations++
-            }
-            log("$iterations simulations")
-        }
-    }
-}
+data class Coefficient(val myBoardCoeff: Double = 2.25,
+                       val oppBoardCoeff: Double = -1.75,
+                       val myHpCoeff: Double = 1.0,
+                       val oppHpCoeff: Double = -1.25,
+                       val myManaCoeff: Double = -0.5,
+                       val myHandCoeff: Double = 1.25)
 
 /*****************************************************************************************************
  ******************************************   UTILS **************************************************
  ******************************************************************************************************/
-
-fun <T : Double> Iterable<T>.indexOfMax(): Int {
-    var maxIndex = 0
-
-    for ((index, elem) in this.withIndex()) {
-        val newElem = this.elementAt(index)
-        if (newElem >= this.elementAt(maxIndex)) {
-            maxIndex = index
-        }
-    }
-    return maxIndex
-}
-
-fun <E> List<E>.getRandomElement() = this[RANDOM.nextInt(this.size)]
-fun <E> List<E>.getRandomIndex() = RANDOM.nextInt(this.size)
-fun <E : Card> List<Card>.getRandomCardIndexFromMyBoard(): Int {
-    return this.getRandomIndexForPredicate { it.location == MyBoard }
-}
 
 fun <Card> List<Card>.getRandomIndexForPredicate(predicate: (Card) -> Boolean): Int {
     val indexes = mutableListOf<Int>()
@@ -737,7 +696,6 @@ private fun <E : Card> List<E>.getRandomPlayableCreatureForPredicate(predicate: 
 }
 
 fun <T : Card> List<T>.hasGuards(): Boolean = this.any { it.guard }
-fun <T : Card> List<T>.guards(): List<T> = this.filter { it.guard }
 fun <T : Card> List<T>.inMyHand(): List<T> = this.filter { it.location == MyHand }
 fun <T : Card> List<T>.onMyBoard(): List<T> = this.filter { it.location == MyBoard }
 fun <T : Card> List<T>.onOpponentBoard(): List<T> = this.filter { it.location == OpponentBoard }
