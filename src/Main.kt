@@ -343,6 +343,7 @@ class State(
                 me().health += card.myHealthChange
                 opponent().health += card.opponentHealthChange
                 me().cardsDrawn += card.cardDraw
+                card.summonedThisTurn = true
                 card.location = MyBoard
             }
             is Use -> {
@@ -359,6 +360,7 @@ class State(
                         targetCard.attack += item.attack
                         targetCard.defense += item.defense
                         targetCard.addAbilitiesFrom(item)
+                        targetCard.canAttack = targetCard.charge && targetCard.summonedThisTurn
                     }
                     RED_ITEM, BLUE_ITEM -> {
                         if (action.targetIdx == null && item.type == RED_ITEM) throw Exception("Red item should always have a target")
@@ -455,6 +457,7 @@ data class Card(val id: Int,
                 val cardDraw: Int,
                 var canAttack: Boolean = true) {
     var analyzed = false
+    var summonedThisTurn = false
 
     override fun toString(): String = instanceId.toString()
 
