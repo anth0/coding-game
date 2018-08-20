@@ -205,6 +205,7 @@ class GameSimulation(
                     summon()
                     hasCardsToSummon = cards.inMyHand().any { it.cost <= gameState.me().mana && !it.analyzed }
                     boardNotFull = cards.count { it.location == MyBoard } < MAX_CREATURES_ON_BOARD
+                    attackerHasCreatureToPlay = gameState.cards.filter{ it.location == MyBoard }.any { it.canAttack && it.attack > 0 } // green items giving charge can "add" creatures to play
                 }
             } else {
                 if (attackerHasCreatureToPlay) {
