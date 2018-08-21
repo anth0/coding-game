@@ -1,11 +1,11 @@
 import CardLocation.*
 import CardType.*
 import java.util.*
+import java.util.concurrent.ThreadLocalRandom
 
 const val MAX_CREATURES_ON_BOARD = 6
 const val MAX_CARDS_IN_HAND = 8
 const val TIMEOUT = 95 * 1000000
-val RANDOM = Random()
 
 fun main(args: Array<String>) {
     val bot = Bot()
@@ -39,7 +39,7 @@ class Bot {
             state = State()
             state.deck = deck
         }
-        var inputString : String  = ""
+        var inputString: String = ""
         val myHealth = input.nextInt()
         val myMana = input.nextInt()
         val myDeckSize = input.nextInt()
@@ -118,7 +118,7 @@ class Bot {
 
             val startTime = System.nanoTime()
             var counter = 0
-            while(System.nanoTime() - startTime < TIMEOUT) {
+            while (System.nanoTime() - startTime < TIMEOUT) {
                 val simulation = GameSimulation(state.copy(), ActionPlan())
                 simulation.play()
                 simulation.eval(coefficient)
@@ -127,7 +127,7 @@ class Bot {
                     log("Found new best score of ${simulation.gameState.score} at simulation #$counter. Previous best score was $bestScore")
                     bestScore = simulation.gameState.score
                     bestActionPlan = simulation.actionPlan
-                } else if (counter% 100 == 0){
+                } else if (counter % 100 == 0) {
                     //log("score for simulation #$counter is ${simulation.gameState.score}")
                 }
                 counter++
@@ -196,21 +196,21 @@ class GameSimulation(
         val cards = gameState.cards
         var hasCardsToSummon = cards.inMyHand().any { it.cost <= gameState.me().mana && !it.analyzed }
         var boardNotFull = cards.count { it.location == MyBoard } < MAX_CREATURES_ON_BOARD
-        var attackerHasCreatureToPlay = gameState.cards.filter{ it.location == MyBoard }.any { it.canAttack && it.attack > 0 }
+        var attackerHasCreatureToPlay = gameState.cards.filter { it.location == MyBoard }.any { it.canAttack && it.attack > 0 }
 
-        while((hasCardsToSummon && boardNotFull) || attackerHasCreatureToPlay) {
+        while ((hasCardsToSummon && boardNotFull) || attackerHasCreatureToPlay) {
             // Randomly summon/use or attack
-            if (RANDOM.nextInt(2) == 0) {
+            if (ThreadLocalRandom.current().nextInt(2) == 0) {
                 if (hasCardsToSummon && boardNotFull) {
                     summon()
                     hasCardsToSummon = cards.inMyHand().any { it.cost <= gameState.me().mana && !it.analyzed }
                     boardNotFull = cards.count { it.location == MyBoard } < MAX_CREATURES_ON_BOARD
-                    attackerHasCreatureToPlay = gameState.cards.filter{ it.location == MyBoard }.any { it.canAttack && it.attack > 0 } // green items giving charge can "add" creatures to play
+                    attackerHasCreatureToPlay = gameState.cards.filter { it.location == MyBoard }.any { it.canAttack && it.attack > 0 } // green items giving charge can "add" creatures to play
                 }
             } else {
                 if (attackerHasCreatureToPlay) {
                     attack({ it.location == MyBoard }, { it.location == OpponentBoard }, false)
-                    attackerHasCreatureToPlay = gameState.cards.filter{ it.location == MyBoard }.any { it.canAttack && it.attack > 0 }
+                    attackerHasCreatureToPlay = gameState.cards.filter { it.location == MyBoard }.any { it.canAttack && it.attack > 0 }
                 }
             }
         }
@@ -243,7 +243,7 @@ class GameSimulation(
             }
         }
 
-        if (action != null ) {
+        if (action != null) {
             if (action.isUseless(gameState)) {
                 cards[cardIdx].analyzed = true
             } else {
@@ -261,7 +261,7 @@ class GameSimulation(
             if (targetCards.hasGuards()) {
                 targetCardIdx = gameState.cards.getRandomGuardIndexForPredicate(targetPredicate)
             } else {
-                if (RANDOM.nextInt(targetCards.size + 1) != 0) {
+                if (ThreadLocalRandom.current().nextInt(targetCards.size + 1) != 0) {
                     targetCardIdx = gameState.cards.getRandomIndexForPredicate(targetPredicate)
                 } else {
                     // Target hero
@@ -679,7 +679,7 @@ fun <Card> List<Card>.getRandomIndexForPredicate(predicate: (Card) -> Boolean): 
             indexes.add(idx)
         }
     }
-    return indexes[RANDOM.nextInt(indexes.size)]
+    return indexes[ThreadLocalRandom.current().nextInt(indexes.size)]
 }
 
 private fun <E : Card> List<E>.getRandomGuardIndexForPredicate(predicate: (E) -> Boolean): Int {
@@ -689,14 +689,14 @@ private fun <E : Card> List<E>.getRandomGuardIndexForPredicate(predicate: (E) ->
             indexes.add(idx)
         }
     }
-    return indexes[RANDOM.nextInt(indexes.size)]
+    return indexes[ThreadLocalRandom.current().nextInt(indexes.size)]
 }
 
 private fun <E : Card> List<E>.getRandomPlayableCreatureForPredicate(predicate: (E) -> Boolean): Int {
     val indexes = this.withIndex()
             .filter { (idx, card) -> predicate(card) && card.canAttack && card.attack > 0 }
             .map { (idx, card) -> idx }
-    return indexes[RANDOM.nextInt(indexes.size)]
+    return indexes[ThreadLocalRandom.current().nextInt(indexes.size)]
 }
 
 fun <T : Card> List<T>.hasGuards(): Boolean = this.any { it.guard }
