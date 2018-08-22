@@ -142,9 +142,9 @@ class Bot {
         actionPlan.execute()
     }
 
-    private val repartition = mutableListOf(0, 2, 8, 6, 7, 4, 2, 3)
+    private val repartition = mutableListOf(1, 2, 4, 5, 5, 4, 3, 6)
     private fun cardForMostEfficientCurve(cards: MutableList<Card>, deck: MutableList<Card>): Int {
-        val needItem = deck.filter { card -> card.type != CREATURE }.size < deck.size / 5
+        val needItem = deck.filter { card -> card.type != CREATURE }.size < deck.size / 3
         val firstCard = cards.inMyHand()[0]
         val secondCard = cards.inMyHand()[1]
         val thirdCard = cards.inMyHand()[2]
@@ -305,6 +305,9 @@ class GameSimulation(
 
         // Nb of cards in hand
         gameState.score += (gameState.cards.inMyHand().size) * coefficient.myHandCoeff
+
+        // nb of cards draw next turn
+        gameState.score +=  gameState.me().cardsDrawn * (coefficient.myCardDraw / (gameState.cards.inMyHand().size + 1))
     }
 }
 
@@ -473,8 +476,8 @@ data class Card(val id: Int,
 
         // attacking score
         var attackingScore = attack.toDouble()
-        if (lethal) {
-            attackingScore += if (ours) 5 else 10
+        if (lethal && attack > 0) {
+            attackingScore += defense
         }
         if (breakthrough) attackingScore += (attack * 0.5)
         if (drain) attackingScore += (attack * 0.5)
@@ -482,7 +485,7 @@ data class Card(val id: Int,
         // defensing score
         var defensingScore = defense.toDouble()
         if (guard) defensingScore += (defense * 0.5)
-        if (ward) defensingScore += 3
+        if (ward) defensingScore += attack
 
         var result = attackingScore + defensingScore
 
@@ -666,7 +669,8 @@ data class Coefficient(val myBoardCoeff: Double = 2.0,
                        val myHpCoeff: Double = 1.25,
                        val oppHpCoeff: Double = -1.0,
                        val myManaCoeff: Double = -1.0,
-                       val myHandCoeff: Double = 0.25)
+                       val myHandCoeff: Double = 0.25,
+                       val myCardDraw: Double = 7.0)
 
 /*****************************************************************************************************
  ******************************************   UTILS **************************************************
