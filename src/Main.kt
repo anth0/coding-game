@@ -275,8 +275,52 @@ class GameSimulation(
         }
     }
 
+    fun oppPlay() {
+        var oppHasCreatureToPlay = gameState.cards.filter { it.location == OpponentBoard }.any { it.canAttack && it.attack > 0 }
+
+        while (oppHasCreatureToPlay) {
+            if (oppHasCreatureToPlay) {
+                attack({ it.location == OpponentBoard }, { it.location == MyBoard }, true)
+                oppHasCreatureToPlay = gameState.cards.filter { it.location == OpponentBoard }.any { it.canAttack && it.attack > 0 }
+            }
+        }
+    }
+
+    fun oppEval(coefficient: Coefficient) {
+        if (gameState.opponent().health <= 0) {
+            gameState.score = Double.NEGATIVE_INFINITY
+            return
+        } else if (gameState.me().health <= 0) {
+            gameState.score = Double.MAX_VALUE
+        }
+
+        // My board
+        gameState.score = -gameState.cards.onMyBoard().sumByDouble { it.rating() } * coefficient.myBoardCoeff
+
+        // Opponent's board
+        gameState.score -= gameState.cards.onOpponentBoard().sumByDouble { it.rating() } * coefficient.oppBoardCoeff
+
+        // My health
+        gameState.score -= gameState.me().health * coefficient.myHpCoeff
+
+        // Opponent's health
+        gameState.score -= gameState.opponent().health * coefficient.oppHpCoeff
+
+    }
+
     fun eval(coefficient: Coefficient) {
         // draw next turn ? => cf. Player.cardDrawn //TODO update it when we play a card that makes us draw smth AND put negative score if drawing those cards would make us have more than the MAX_CARDS_IN_HAND!
+
+//        var bestScore = 0.0
+//        for (i in 1..10) {
+//            val simulation = GameSimulation(gameState.copy(), ActionPlan())
+//            simulation.oppPlay()
+//            simulation.oppEval(coefficient)
+//
+//            if (simulation.gameState.score > bestScore) {
+//                bestScore = simulation.gameState.score
+//            }
+//        }
 
         if (gameState.opponent().health <= 0) {
             gameState.score = Double.MAX_VALUE
@@ -284,6 +328,9 @@ class GameSimulation(
         } else if (gameState.me().health <= 0) {
             gameState.score = Double.NEGATIVE_INFINITY // TODO simulate best actionplan for opponent
         }
+
+
+//        gameState.score = bestScore
 
         // My board
         gameState.score = gameState.cards.onMyBoard().sumByDouble { it.rating() } * coefficient.myBoardCoeff
@@ -497,11 +544,11 @@ data class Card(val id: Int,
     fun abilitiesRating(): Double {
         var rating = 0.0
 
-        if (breakthrough) rating += 1
-        if (charge) rating += 2
-        if (drain) rating += 0.5 * attack
-        if (guard) rating += 1
-        if (lethal) rating += 4
+        if (breakthrough) rating += 0.25
+        if (charge) rating += 1
+        if (drain) rating += 0.25 * attack
+        if (guard) rating += 0.5
+        if (lethal) rating += defense
         if (ward) rating += attack
 
         return rating
